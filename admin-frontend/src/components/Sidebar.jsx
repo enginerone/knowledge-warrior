@@ -2,12 +2,12 @@ import React from 'react';
 
 export default function Sidebar({ activeTab, setActiveTab, pendingCount = 0 }) {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'users', label: 'Registered Users', icon: '👥' },
-    { id: 'ingestion', label: 'PDF AI Ingestion', icon: '🤖' },
-    { id: 'review', label: 'Review Queue', icon: '📝', badge: pendingCount },
-    { id: 'bank', label: 'Question Bank', icon: '📚' },
-    { id: 'leaderboard', label: 'Leaderboard', icon: '🏆' },
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'users', label: 'Registered Users' },
+    { id: 'ingestion', label: 'PDF AI Ingestion' },
+    { id: 'review', label: 'Review Queue', badge: pendingCount },
+    { id: 'bank', label: 'Question Bank' },
+    { id: 'leaderboard', label: 'Leaderboard' },
   ];
 
   return (
@@ -68,10 +68,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 0 }) {
               }
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '16px' }}>{item.icon}</span>
-              <span>{item.label}</span>
-            </div>
+            <span>{item.label}</span>
             {item.badge > 0 && (
               <span style={{
                 backgroundColor: 'var(--accent-warning)',

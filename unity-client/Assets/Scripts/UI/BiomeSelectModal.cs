@@ -180,7 +180,7 @@ namespace KnowledgeWarrior.UI
                 c.topicsText.text = opt.topicsSummary;
                 c.countText.text = $"{opt.questionCount} Questions  •  {sp.points} PTS";
                 c.launchBtnBg.color = isSelected ? Green : opt.accentColor;
-                c.launchBtnText.text = "OPEN SUBJECT LOBBY →";
+                c.launchBtnText.text = "OPEN SUBJECT LOBBY";
 
                 var captured = opt;
                 c.button.onClick.RemoveAllListeners();
@@ -318,7 +318,7 @@ namespace KnowledgeWarrior.UI
 
                 var launchBg = CreateImage("LaunchBar", c, Cyan);
                 Place(launchBg.rectTransform, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 18), new Vector2(cardW - 44f, 54f));
-                var launchTxt = CreateText("LaunchLabel", launchBg.rectTransform, "OPEN SUBJECT LOBBY →", 20, DarkText, TextAlignmentOptions.Center, true, Stretch);
+                var launchTxt = CreateText("LaunchLabel", launchBg.rectTransform, "OPEN SUBJECT LOBBY", 20, DarkText, TextAlignmentOptions.Center, true, Stretch);
 
                 _cards.Add(new CardWidgets
                 {

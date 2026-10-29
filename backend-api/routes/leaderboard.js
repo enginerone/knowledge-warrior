@@ -9,7 +9,7 @@ router.get('/global', async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 100);
     const period = (req.query.period || 'all').toLowerCase();
 
-    let whereClause = "WHERE (u.role != 'admin' OR u.role IS NULL)";
+    let whereClause = "WHERE (u.role != 'admin' OR u.role IS NULL) AND COALESCE(u.is_banned, false) = false";
     if (period === 'weekly') {
       whereClause += " AND u.last_synced_at >= NOW() - INTERVAL '7 days'";
     }

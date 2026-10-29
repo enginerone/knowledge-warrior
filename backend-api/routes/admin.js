@@ -4,8 +4,22 @@ const db = require('../db');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { extractTextFromPDF } = require('../services/pdfService');
 const { generateQuestionsFromText } = require('../services/geminiService');
+const {
+  isDuplicateQuestion,
+  filterUniqueQuestions,
+} = require('../services/questionDeduplicator');
 
 const router = express.Router();
+
+let userBanColumnsEnsured = false;
+async function ensureUserBanColumns() {
+  if (userBanColumnsEnsured) return;
+  await db.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ;
+  `);
+  userBanColumnsEnsured = true;
+}
 
 // Configure multer for memory storage (max 10MB PDF)
 const upload = multer({
@@ -56,6 +70,7 @@ router.get('/stats', async (req, res, next) => {
 // GET /api/v1/admin/users - Track all registered users in PostgreSQL
 router.get('/users', async (req, res, next) => {
   try {
+    await ensureUserBanColumns();
     const result = await db.query(`
       SELECT
         u.id,
@@ -64,6 +79,8 @@ router.get('/users', async (req, res, next) => {
         u.role,
         u.total_xp AS "totalXp",
         u.current_level AS "currentLevel",
+        COALESCE(u.is_banned, false) AS "isBanned",
+        u.banned_at AS "bannedAt",
         u.created_at AS "createdAt",
         u.last_synced_at AS "lastSyncedAt",
         (u.password_hash IS NOT NULL) AS "isRegisteredAccount",
@@ -91,9 +108,79 @@ router.get('/users', async (req, res, next) => {
   }
 });
 
-// GET /api/v1/admin/pending-questions - Questions awaiting review
+// PUT /api/v1/admin/users/:id/ban - Ban (disable) or unban (enable) a user account
+router.put('/users/:id/ban', async (req, res, next) => {
+  try {
+    await ensureUserBanColumns();
+    const { id } = req.params;
+    const { banned } = req.body || {};
+
+    const existing = await db.query('SELECT id, username, role, COALESCE(is_banned, false) AS "isBanned" FROM users WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const targetUser = existing.rows[0];
+    if (targetUser.role === 'admin') {
+      return res.status(403).json({ error: 'Administrator accounts cannot be banned' });
+    }
+
+    const nextBanState = typeof banned === 'boolean' ? banned : !targetUser.isBanned;
+    const updateRes = await db.query(
+      `UPDATE users
+       SET is_banned = $1,
+           banned_at = CASE WHEN $1 = true THEN NOW() ELSE NULL END
+       WHERE id = $2
+       RETURNING id, username, email, role, total_xp AS "totalXp", current_level AS "currentLevel", COALESCE(is_banned, false) AS "isBanned", banned_at AS "bannedAt"`,
+      [nextBanState, id]
+    );
+
+    res.json({
+      message: nextBanState
+        ? `User @${targetUser.username} has been banned (disabled).`
+        : `User @${targetUser.username} has been unbanned (enabled).`,
+      user: updateRes.rows[0],
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/v1/admin/users/:id - Permanently delete a user account and cascading logs
+router.delete('/users/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const existing = await db.query('SELECT id, username, role FROM users WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const targetUser = existing.rows[0];
+    if (targetUser.role === 'admin') {
+      return res.status(403).json({ error: 'Administrator accounts cannot be deleted' });
+    }
+
+    await db.query('DELETE FROM users WHERE id = $1', [id]);
+
+    res.json({
+      message: `User @${targetUser.username} has been permanently deleted.`,
+      deletedId: id,
+      username: targetUser.username,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/v1/admin/pending-questions - Questions awaiting review (automatically deduplicated)
 router.get('/pending-questions', async (req, res, next) => {
   try {
+    const approvedRes = await db.query(
+      "SELECT question_text FROM questions WHERE status = 'APPROVED'"
+    );
+    const approvedTexts = approvedRes.rows.map((r) => r.question_text);
+
     const result = await db.query(`
       SELECT 
         q.id,
@@ -116,9 +203,30 @@ router.get('/pending-questions', async (req, res, next) => {
       ORDER BY q.created_at DESC
     `);
 
+    const seenTexts = [...approvedTexts];
+    const uniquePending = [];
+    const duplicateIdsToClean = [];
+
+    for (const row of result.rows) {
+      if (isDuplicateQuestion(row.questionText, seenTexts)) {
+        duplicateIdsToClean.push(row.id);
+      } else {
+        seenTexts.push(row.questionText);
+        uniquePending.push(row);
+      }
+    }
+
+    if (duplicateIdsToClean.length > 0) {
+      await db.query(
+        "UPDATE questions SET status = 'REJECTED' WHERE id = ANY($1::uuid[])",
+        [duplicateIdsToClean]
+      );
+    }
+
     res.json({
-      count: result.rows.length,
-      questions: result.rows,
+      count: uniquePending.length,
+      duplicatesRemoved: duplicateIdsToClean.length,
+      questions: uniquePending,
     });
   } catch (err) {
     next(err);
@@ -147,20 +255,42 @@ router.post('/upload-pdf', upload.single('pdf'), async (req, res, next) => {
     const topicRes = await db.query('SELECT name FROM topics WHERE id = $1', [topicId]);
     const topicName = topicRes.rows[0]?.name || 'General Computer Science';
 
+    // Fetch existing PENDING and APPROVED questions to prevent duplicate generation
+    const existingRes = await db.query(
+      `SELECT question_text
+       FROM questions
+       WHERE status IN ('PENDING', 'APPROVED')
+       ORDER BY (topic_id = $1) DESC, created_at DESC`,
+      [topicId]
+    );
+    const existingQuestionTexts = existingRes.rows.map((r) => r.question_text);
+
     // 1. Extract text from PDF
     const extractedText = await extractTextFromPDF(req.file.buffer);
     if (!extractedText || extractedText.length < 50) {
       return res.status(400).json({ error: 'The uploaded PDF contains insufficient extractable text' });
     }
 
-    // 2. Generate questions using Gemini (with automatic multi-model failover) outside DB transaction
+    // 2. Generate questions using Gemini (with automatic multi-model failover and deduplication)
     const generated = await generateQuestionsFromText(extractedText, {
       count,
       topic: topicName,
       difficulty,
+      existingQuestions: existingQuestionTexts,
     });
 
-    // 3. Persist upload record and generated questions in a fast atomic transaction
+    const { uniqueQuestions, skippedDuplicates } = filterUniqueQuestions(
+      generated,
+      existingQuestionTexts
+    );
+
+    if (uniqueQuestions.length === 0) {
+      return res.status(409).json({
+        error: 'All generated questions matched existing questions in the database. Try selecting a different topic, difficulty tier, or chapter.',
+      });
+    }
+
+    // 3. Persist upload record and unique generated questions in a fast atomic transaction
     const client = await db.pool.connect();
     try {
       await client.query('BEGIN');
@@ -173,7 +303,7 @@ router.post('/upload-pdf', upload.single('pdf'), async (req, res, next) => {
       const uploadId = uploadRes.rows[0].id;
 
       const insertedQuestions = [];
-      for (const q of generated) {
+      for (const q of uniqueQuestions) {
         const qRes = await client.query(
           `INSERT INTO questions (
             topic_id, upload_id, question_text, options, correct_index, explanation, difficulty, xp_reward, status
@@ -197,9 +327,10 @@ router.post('/upload-pdf', upload.single('pdf'), async (req, res, next) => {
       await client.query('COMMIT');
 
       res.status(201).json({
-        message: `Successfully generated ${insertedQuestions.length} questions awaiting approval`,
+        message: `Successfully generated ${insertedQuestions.length} unique questions awaiting approval`,
         uploadId,
         filename: req.file.originalname,
+        duplicatesFiltered: skippedDuplicates.length,
         questions: insertedQuestions,
       });
     } catch (dbErr) {
@@ -217,7 +348,7 @@ router.post('/upload-pdf', upload.single('pdf'), async (req, res, next) => {
 router.put('/approve-question/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { questionText, options, correctIndex, explanation, difficulty } = req.body;
+    const { questionText, options, correctIndex, explanation, difficulty } = req.body || {};
 
     const existing = await db.query('SELECT * FROM questions WHERE id = $1', [id]);
     if (existing.rows.length === 0) {
@@ -225,12 +356,27 @@ router.put('/approve-question/:id', async (req, res, next) => {
     }
 
     const current = existing.rows[0];
-    const newText = questionText || current.question_text;
+    const newText = (questionText || current.question_text).trim();
     const newOptions = options ? JSON.stringify(options) : current.options;
     const newCorrectIdx = correctIndex !== undefined ? correctIndex : current.correct_index;
     const newExpl = explanation !== undefined ? explanation : current.explanation;
     const newDiff = difficulty || current.difficulty;
     const newXp = newDiff * 20;
+
+    // Prevent duplicate questions from entering the APPROVED pool
+    const approvedCheck = await db.query(
+      "SELECT question_text FROM questions WHERE status = 'APPROVED' AND id != $1",
+      [id]
+    );
+    const approvedTexts = approvedCheck.rows.map((r) => r.question_text);
+
+    if (isDuplicateQuestion(newText, approvedTexts)) {
+      await db.query("UPDATE questions SET status = 'REJECTED' WHERE id = $1", [id]);
+      return res.status(200).json({
+        duplicateSkipped: true,
+        message: 'Duplicate question detected and automatically discarded because this question is already approved in the live bank.',
+      });
+    }
 
     const result = await db.query(
       `UPDATE questions
@@ -248,8 +394,119 @@ router.put('/approve-question/:id', async (req, res, next) => {
     );
 
     res.json({
+      duplicateSkipped: false,
       message: 'Question approved and moved to active pool',
       question: result.rows[0],
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/v1/admin/approve-questions-bulk - Approve and publish selected or all pending questions
+router.put('/approve-questions-bulk', async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    const { ids, approveAll } = req.body || {};
+
+    await client.query('BEGIN');
+
+    const approvedRes = await client.query(
+      "SELECT question_text FROM questions WHERE status = 'APPROVED'"
+    );
+    const seenApprovedTexts = approvedRes.rows.map((r) => r.question_text);
+
+    let pendingRes;
+    if (Array.isArray(ids) && ids.length > 0 && !approveAll) {
+      pendingRes = await client.query(
+        `SELECT id, question_text, difficulty
+         FROM questions
+         WHERE id = ANY($1::uuid[]) AND status = 'PENDING'
+         ORDER BY created_at ASC`,
+        [ids]
+      );
+    } else {
+      pendingRes = await client.query(
+        `SELECT id, question_text, difficulty
+         FROM questions
+         WHERE status = 'PENDING'
+         ORDER BY created_at ASC`
+      );
+    }
+
+    const idsToApprove = [];
+    const duplicateIdsToReject = [];
+
+    for (const q of pendingRes.rows) {
+      if (isDuplicateQuestion(q.question_text, seenApprovedTexts)) {
+        duplicateIdsToReject.push(q.id);
+      } else {
+        seenApprovedTexts.push(q.question_text);
+        idsToApprove.push(q.id);
+      }
+    }
+
+    if (idsToApprove.length > 0) {
+      await client.query(
+        `UPDATE questions
+         SET status = 'APPROVED',
+             xp_reward = difficulty * 20,
+             approved_at = NOW()
+         WHERE id = ANY($1::uuid[])`,
+        [idsToApprove]
+      );
+    }
+
+    if (duplicateIdsToReject.length > 0) {
+      await client.query(
+        `UPDATE questions
+         SET status = 'REJECTED'
+         WHERE id = ANY($1::uuid[])`,
+        [duplicateIdsToReject]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: `Approved and published ${idsToApprove.length} unique question(s)${
+        duplicateIdsToReject.length > 0
+          ? ` (${duplicateIdsToReject.length} duplicate(s) automatically filtered)`
+          : ''
+      }`,
+      approvedCount: idsToApprove.length,
+      duplicatesSkipped: duplicateIdsToReject.length,
+      approvedIds: idsToApprove,
+      duplicateIds: duplicateIdsToReject,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /api/v1/admin/reject-questions-bulk - Reject selected pending questions in bulk
+router.put('/reject-questions-bulk', async (req, res, next) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Please provide at least one question ID to discard' });
+    }
+
+    const result = await db.query(
+      `UPDATE questions
+       SET status = 'REJECTED'
+       WHERE id = ANY($1::uuid[])
+       RETURNING id`,
+      [ids]
+    );
+
+    res.json({
+      message: `Discarded ${result.rows.length} question(s) from the review queue`,
+      rejectedCount: result.rows.length,
+      rejectedIds: result.rows.map((r) => r.id),
     });
   } catch (err) {
     next(err);

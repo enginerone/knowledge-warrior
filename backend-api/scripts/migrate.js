@@ -73,11 +73,15 @@ async function runMigrations() {
         role VARCHAR(20) DEFAULT 'player' CHECK (role IN ('player', 'admin')),
         total_xp INT DEFAULT 0,
         current_level INT DEFAULT 1,
+        is_banned BOOLEAN DEFAULT FALSE,
+        banned_at TIMESTAMPTZ,
         reset_otp_hash VARCHAR(255),
         reset_otp_expires_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         last_synced_at TIMESTAMPTZ DEFAULT NOW()
       );
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_hash VARCHAR(255);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires_at TIMESTAMPTZ;
       CREATE INDEX IF NOT EXISTS idx_users_xp ON users(total_xp DESC);
