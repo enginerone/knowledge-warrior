@@ -26,6 +26,7 @@ namespace KnowledgeWarrior.Data
         private readonly Dictionary<string, Queue<QuestionData>> _decks = new();
         private readonly Random _rng = new();
         private string _lastQuestionId;
+        private string _lastQuestionNormalizedText;
 
         public static string CachePath => Path.Combine(Application.persistentDataPath, CacheFileName);
 
@@ -151,7 +152,9 @@ namespace KnowledgeWarrior.Data
                 }
 
                 Shuffle(pool);
-                if (pool.Count > 1 && pool[0].id == _lastQuestionId)
+                if (pool.Count > 1 &&
+                    (pool[0].id == _lastQuestionId ||
+                     NormalizeQuestionText(pool[0].question) == _lastQuestionNormalizedText))
                 {
                     (pool[0], pool[pool.Count - 1]) = (pool[pool.Count - 1], pool[0]);
                 }
@@ -162,6 +165,7 @@ namespace KnowledgeWarrior.Data
 
             var next = deck.Dequeue();
             _lastQuestionId = next.id;
+            _lastQuestionNormalizedText = NormalizeQuestionText(next.question);
             return shuffleChoices ? next.CreateShuffledCopy(_rng) : next;
         }
 
@@ -188,7 +192,8 @@ namespace KnowledgeWarrior.Data
             }
 
             var valid = new List<QuestionData>();
-            var seenIds = new HashSet<string>();
+            var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenNormalizedTexts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var q in bank.questions)
             {
                 if (q == null) continue;
@@ -200,6 +205,12 @@ namespace KnowledgeWarrior.Data
                 if (!seenIds.Add(q.id))
                 {
                     Debug.LogWarning($"[QuestionManager] Skipping duplicate id '{q.id}'");
+                    continue;
+                }
+                string normText = NormalizeQuestionText(q.question);
+                if (!string.IsNullOrEmpty(normText) && !seenNormalizedTexts.Add(normText))
+                {
+                    Debug.LogWarning($"[QuestionManager] Skipping duplicate question text '{q.id}'");
                     continue;
                 }
                 valid.Add(q);
@@ -245,6 +256,13 @@ namespace KnowledgeWarrior.Data
                 int j = _rng.Next(i + 1);
                 (list[i], list[j]) = (list[j], list[i]);
             }
+        }
+
+        private static string NormalizeQuestionText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            var chars = text.Trim().ToLowerInvariant().Where(c => char.IsLetterOrDigit(c) || char.IsWhiteSpace(c)).ToArray();
+            return string.Join(" ", new string(chars).Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries));
         }
     }
 }

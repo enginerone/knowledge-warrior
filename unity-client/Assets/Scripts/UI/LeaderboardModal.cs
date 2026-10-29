@@ -337,7 +337,7 @@ namespace KnowledgeWarrior.UI
         private static string FormatBadges(bool firstWin, bool scholar, bool bossSlayer, bool veteran, bool cloudLinked)
         {
             static string Pill(string title, bool unlocked) =>
-                unlocked ? $"<color=#3EE6A0>[★ {title}]</color>" : $"<color=#647099>[Locked: {title}]</color>";
+                unlocked ? $"<color=#3EE6A0>[{title}]</color>" : $"<color=#647099>[Locked: {title}]</color>";
 
             return $"{Pill("First Blood", firstWin)}   {Pill("Sharp Mind 80%+", scholar)}   {Pill("Null Dragon Slayer", bossSlayer)}\n" +
                    $"{Pill("Veteran Lv.5+", veteran)}   {Pill("Cloud Linked", cloudLinked)}";

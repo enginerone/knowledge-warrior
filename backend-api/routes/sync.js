@@ -67,8 +67,16 @@ router.post('/progress', optionalToken, async (req, res, next) => {
       }
     }
 
-    // Fetch current total_xp
-    const currentRes = await client.query('SELECT total_xp FROM users WHERE id = $1', [userId]);
+    // Fetch current total_xp and check if user is banned
+    const currentRes = await client.query('SELECT total_xp, COALESCE(is_banned, false) AS is_banned FROM users WHERE id = $1', [userId]);
+    if (currentRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'User account not found' });
+    }
+    if (currentRes.rows[0].is_banned) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'User account is banned (disabled)' });
+    }
     const currentXp = (currentRes.rows[0]?.total_xp || 0) + addedXp;
     const newLevel = calculateLevel(currentXp);
 

@@ -125,10 +125,9 @@ export default function Header({ user, onLogout, health }) {
               boxShadow: 'var(--shadow-sm)',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
             }}
           >
-            🔑 Educator Login
+            Educator Login
           </button>
         )}
       </div>

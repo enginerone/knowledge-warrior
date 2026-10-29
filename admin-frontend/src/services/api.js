@@ -83,17 +83,63 @@ export const api = {
   // Admin
   getStats: () => request('/admin/stats'),
   getRegisteredUsers: () => request('/admin/users'),
+  setUserBanStatus: (id, banned) =>
+    request(`/admin/users/${id}/ban`, {
+      method: 'PUT',
+      body: JSON.stringify({ banned }),
+    }),
+  deleteUser: (id) =>
+    request(`/admin/users/${id}`, {
+      method: 'DELETE',
+    }),
   getPendingQuestions: () => request('/admin/pending-questions'),
   uploadPdf: (formData) =>
     request('/admin/upload-pdf', {
       method: 'POST',
       body: formData,
     }),
-  approveQuestion: (id, payload) =>
+  approveQuestion: (id, payload = {}) =>
     request(`/admin/approve-question/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),
+  approveQuestionsBulk: async (ids = [], approveAll = false) => {
+    try {
+      return await request('/admin/approve-questions-bulk', {
+        method: 'PUT',
+        body: JSON.stringify({ ids, approveAll }),
+      });
+    } catch (err) {
+      if (err.status === 404 && Array.isArray(ids) && ids.length > 0) {
+        let approvedCount = 0;
+        for (const id of ids) {
+          await request(`/admin/approve-question/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({}),
+          });
+          approvedCount++;
+        }
+        return { approvedCount, duplicatesSkipped: 0, approvedIds: ids };
+      }
+      throw err;
+    }
+  },
+  rejectQuestionsBulk: async (ids = []) => {
+    try {
+      return await request('/admin/reject-questions-bulk', {
+        method: 'PUT',
+        body: JSON.stringify({ ids }),
+      });
+    } catch (err) {
+      if (err.status === 404 && Array.isArray(ids) && ids.length > 0) {
+        for (const id of ids) {
+          await request(`/admin/reject-question/${id}`, { method: 'PUT' });
+        }
+        return { rejectedCount: ids.length, rejectedIds: ids };
+      }
+      throw err;
+    }
+  },
   rejectQuestion: (id) =>
     request(`/admin/reject-question/${id}`, {
       method: 'PUT',

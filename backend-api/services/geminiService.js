@@ -1,4 +1,5 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { filterUniqueQuestions } = require('./questionDeduplicator');
 
 const DEFAULT_FALLBACK_MODELS = [
   'gemini-3.5-flash-lite',
@@ -56,9 +57,9 @@ function validateQuestion(q) {
 }
 
 /**
- * Parses and sanitizes raw LLM JSON response text into validated question objects.
+ * Parses, sanitizes, and deduplicates raw LLM JSON response text into validated question objects.
  */
-function parseAndSanitizeQuestions(responseText, defaultDifficulty) {
+function parseAndSanitizeQuestions(responseText, defaultDifficulty, existingQuestions = []) {
   let parsed = [];
   try {
     parsed = JSON.parse(responseText);
@@ -98,7 +99,12 @@ function parseAndSanitizeQuestions(responseText, defaultDifficulty) {
     });
   }
 
-  return sanitized;
+  const { uniqueQuestions, skippedDuplicates } = filterUniqueQuestions(sanitized, existingQuestions);
+  if (skippedDuplicates.length > 0) {
+    console.info(`ℹ️ Filtered out ${skippedDuplicates.length} duplicate question(s) from LLM output.`);
+  }
+
+  return uniqueQuestions;
 }
 
 /**
@@ -109,7 +115,7 @@ async function callModelWithTimeout(genAI, modelName, prompt, timeoutMs) {
     model: modelName,
     generationConfig: {
       responseMimeType: 'application/json',
-      temperature: 0.3,
+      temperature: 0.35,
     },
   });
 
@@ -127,7 +133,7 @@ async function callModelWithTimeout(genAI, modelName, prompt, timeoutMs) {
 /**
  * Generates RPG multiple-choice questions from educational text using Gemini with multi-model failover.
  * @param {string} textContent - Textbook excerpt
- * @param {object} options - { count: 5, topic: 'Data Structures', difficulty: 2 }
+ * @param {object} options - { count: 5, topic: 'Data Structures', difficulty: 2, existingQuestions: [] }
  * @returns {Promise<Array>}
  */
 async function generateQuestionsFromText(textContent, options = {}) {
@@ -140,19 +146,29 @@ async function generateQuestionsFromText(textContent, options = {}) {
   const count = options.count || 5;
   const topic = options.topic || 'General Computer Science';
   const difficulty = options.difficulty || 2;
+  const existingQuestions = Array.isArray(options.existingQuestions) ? options.existingQuestions : [];
+
+  const exclusionBlock =
+    existingQuestions.length > 0
+      ? `\nExisting Questions in Database (DO NOT repeat, rephrase, or duplicate any of these questions):\n${existingQuestions
+          .slice(0, 50)
+          .map((qText, idx) => `${idx + 1}. ${qText}`)
+          .join('\n')}\n`
+      : '';
 
   const prompt = `
 You are a senior computer science educator and game designer for the educational RPG "Knowledge Warrior".
-Your task is to analyze the following textbook excerpt and generate exactly ${count} high-quality multiple-choice questions for grade 11+ students on the topic "${topic}".
+Your task is to analyze the following textbook excerpt and generate ${count} distinct, non-repeating, high-quality multiple-choice questions for grade 11+ students on the topic "${topic}".
 
 Guidelines:
 1. Each question must test conceptual comprehension or code tracing (Bloom's Taxonomy Level 2 or 3).
-2. Exactly 4 options per question.
-3. Distractors must represent common student misconceptions such as off-by-one errors or confusing average-case with worst-case complexity.
-4. Provide a clear, educational explanation (max 2 sentences) for why the correct option is right.
-5. Difficulty should be set to ${difficulty} (1 = Beginner Levels 1-15, 2 = Intermediate Levels 16-30, 3 = Advanced Levels 31-60, 4 = Expert Levels 61-100).
-6. xpReward should be ${difficulty * 20}.
-7. Return ONLY a valid JSON array conforming to this schema without Markdown fences:
+2. Every generated question must cover a unique sub-concept from the excerpt and must NOT repeat or closely paraphrase any other question in this batch or in the Existing Questions list.
+3. Exactly 4 distinct options per question.
+4. Distractors must represent common student misconceptions such as off-by-one errors or confusing average-case with worst-case complexity.
+5. Provide a clear, educational explanation (max 2 sentences) for why the correct option is right.
+6. Difficulty should be set to ${difficulty} (1 = Beginner Levels 1-15, 2 = Intermediate Levels 16-30, 3 = Advanced Levels 31-60, 4 = Expert Levels 61-100).
+7. xpReward should be ${difficulty * 20}.
+8. Return ONLY a valid JSON array conforming to this schema without Markdown fences:
 
 [
   {
@@ -164,7 +180,7 @@ Guidelines:
     "xpReward": ${difficulty * 20}
   }
 ]
-
+${exclusionBlock}
 Textbook Excerpt:
 ${textContent.slice(0, 10000)}
 `;
@@ -175,11 +191,11 @@ ${textContent.slice(0, 10000)}
   for (const modelName of candidateModels) {
     try {
       const responseText = await callModelWithTimeout(genAI, modelName, prompt, MODEL_TIMEOUT_MS);
-      const questions = parseAndSanitizeQuestions(responseText, difficulty);
+      const questions = parseAndSanitizeQuestions(responseText, difficulty, existingQuestions);
       if (questions.length > 0) {
-        return questions;
+        return questions.slice(0, count);
       }
-      throw new Error(`Model ${modelName} returned 0 valid questions`);
+      throw new Error(`Model ${modelName} returned 0 unique valid questions`);
     } catch (err) {
       const statusInfo = err.status ? ` [HTTP ${err.status}]` : '';
       const reason = err.name === 'AbortError'
@@ -197,6 +213,7 @@ ${textContent.slice(0, 10000)}
 
 module.exports = {
   generateQuestionsFromText,
+  parseAndSanitizeQuestions,
   shuffleOptions,
   validateQuestion,
   getCandidateModels,

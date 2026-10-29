@@ -246,19 +246,9 @@ export default function LoginPage({ onLoginSuccess, health }) {
             onMouseLeave={(e) => { if (!loading) e.currentTarget.style.backgroundColor = 'var(--accent-primary)'; }}
           >
             {loading ? (
-              <>
-                <span className="animate-spin" style={{
-                  display: 'inline-block',
-                  width: '18px',
-                  height: '18px',
-                  border: '2px solid rgba(255, 255, 255, 0.3)',
-                  borderTopColor: '#ffffff',
-                  borderRadius: '50%',
-                }}></span>
-                <span>Authenticating...</span>
-              </>
+              <span>Authenticating...</span>
             ) : (
-              <span>Sign In to Admin Console →</span>
+              <span>Sign In to Admin Console</span>
             )}
           </button>
         </form>

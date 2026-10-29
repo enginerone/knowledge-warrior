@@ -292,7 +292,7 @@ namespace KnowledgeWarrior.UI
             Stretch(card, 2, 2, 2, 2);
 
             // Top Brand & Title
-            CreateText("BrandBadge", card, "⚔️ KNOWLEDGE WARRIOR DATABASE AUTHENTICATION", 21, Cyan, TextAlignmentOptions.Center, true,
+            CreateText("BrandBadge", card, "KNOWLEDGE WARRIOR DATABASE AUTHENTICATION", 21, Cyan, TextAlignmentOptions.Center, true,
                 r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -24), new Vector2(860, 32)));
 
             _headerTitle = CreateText("HeaderTitle", card, "STEP 1: WARRIOR REGISTRATION", 36, Gold, TextAlignmentOptions.Center, true,
@@ -330,11 +330,11 @@ namespace KnowledgeWarrior.UI
             _regPasswordInput = CreateInputField("RegPassword", regRt, "Create a strong password...", true, new Vector2(0, -562), new Vector2(800, 62));
 
             var regSubmitBtn = CreateButton("RegisterSubmitBtn", regRt, Cyan, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(0, -654), new Vector2(800, 72), "REGISTER & PROCEED TO LOGIN →", 26, DarkText, out _);
+                new Vector2(0.5f, 1), new Vector2(0, -654), new Vector2(800, 72), "REGISTER & PROCEED TO LOGIN", 26, DarkText, out _);
             regSubmitBtn.onClick.AddListener(OnRegisterSubmit);
 
             var toLoginBtn = CreateButton("AlreadyHaveAccountBtn", regRt, InputBgColor, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(0, -740), new Vector2(460, 48), "Already registered? Go to Login Page →", 20, Cyan, out _);
+                new Vector2(0.5f, 1), new Vector2(0, -740), new Vector2(460, 48), "Already registered? Go to Login Page", 20, Cyan, out _);
             toLoginBtn.onClick.AddListener(() => SwitchPage(AuthPage.Login));
 
             // Page 2: Login Page
@@ -348,7 +348,7 @@ namespace KnowledgeWarrior.UI
             _loginPasswordInput = CreateInputField("LoginPassword", loginRt, "Enter your password...", true, new Vector2(0, -466), new Vector2(800, 64));
 
             var loginSubmitBtn = CreateButton("LoginSubmitBtn", loginRt, Green, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(0, -564), new Vector2(800, 74), "SIGN IN TO KNOWLEDGE WARRIOR →", 26, DarkText, out _);
+                new Vector2(0.5f, 1), new Vector2(0, -564), new Vector2(800, 74), "SIGN IN TO KNOWLEDGE WARRIOR", 26, DarkText, out _);
             loginSubmitBtn.onClick.AddListener(OnLoginSubmit);
 
             var forgotBtn = CreateButton("ForgotPasswordBtn", loginRt, Violet, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
@@ -388,15 +388,15 @@ namespace KnowledgeWarrior.UI
             _forgotNewPasswordInput = CreateInputField("ForgotNewPass", forgotRt, "Enter your new password...", true, new Vector2(0, -562), new Vector2(800, 60));
 
             var savePassBtn = CreateButton("SaveNewPassBtn", forgotRt, Green, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(0, -648), new Vector2(800, 70), "CHANGE PASSWORD & RETURN TO LOGIN →", 24, DarkText, out _);
+                new Vector2(0.5f, 1), new Vector2(0, -648), new Vector2(800, 70), "CHANGE PASSWORD & RETURN TO LOGIN", 24, DarkText, out _);
             savePassBtn.onClick.AddListener(OnResetPasswordSubmit);
 
             var cancelForgotBtn = CreateButton("CancelForgotBtn", forgotRt, InputBgColor, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(1f, 1f), new Vector2(-10, -734), new Vector2(360, 48), "← Back to Login Page", 20, TextSoft, out _);
+                new Vector2(1f, 1f), new Vector2(-10, -734), new Vector2(360, 48), "Back to Login Page", 20, TextSoft, out _);
             cancelForgotBtn.onClick.AddListener(() => SwitchPage(AuthPage.Login));
 
             _openInboxPreviewBtn = CreateButton("OpenEmailInboxBtn", forgotRt, Violet, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0f, 1f), new Vector2(10, -734), new Vector2(390, 48), "📬 OPEN EMAIL INBOX (VIEW OTP)", 19, DarkText, out _);
+                new Vector2(0f, 1f), new Vector2(10, -734), new Vector2(390, 48), "OPEN EMAIL INBOX (VIEW OTP)", 19, DarkText, out _);
             _openInboxPreviewBtn.onClick.AddListener(() =>
             {
                 if (AuthManager.Instance != null && !string.IsNullOrWhiteSpace(AuthManager.Instance.LastOtpPreviewUrl))

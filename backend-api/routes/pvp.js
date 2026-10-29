@@ -122,6 +122,7 @@ router.get('/lobby', optionalToken, async (req, res, next) => {
        WHERE LOWER(usp.subject) = LOWER($1)
          AND usp.subject_level = $2
          AND (u.role != 'admin' OR u.role IS NULL)
+         AND COALESCE(u.is_banned, false) = false
          ${excludeClause}
        ORDER BY usp.subject_xp DESC, u.username ASC
        LIMIT 30`,

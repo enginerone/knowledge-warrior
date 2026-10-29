@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
+const { normalizeQuestionText } = require('../services/questionDeduplicator');
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ router.get('/biomes', async (req, res, next) => {
   }
 });
 
-// GET /api/v1/questions - Fetch approved questions with filtering & version hash
+// GET /api/v1/questions - Fetch approved questions with filtering, deduplication & version hash
 router.get('/', async (req, res, next) => {
   try {
     const { subject, topic, difficulty, limit, offset } = req.query;
@@ -81,7 +82,17 @@ router.get('/', async (req, res, next) => {
     }
 
     const result = await db.query(queryText, params);
-    const questions = result.rows;
+
+    const seenNormalized = new Set();
+    const questions = [];
+    for (const row of result.rows) {
+      const norm = normalizeQuestionText(row.question);
+      if (!norm || seenNormalized.has(norm)) {
+        continue;
+      }
+      seenNormalized.add(norm);
+      questions.push(row);
+    }
 
     // Compute dataset version hash for client cache validation
     const hashData = questions.map((q) => `${q.id}:${q.approvedAt || q.createdAt}`).join('|');

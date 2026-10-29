@@ -261,7 +261,7 @@ namespace KnowledgeWarrior.UI
 
                 row.root.SetActive(true);
                 row.border.color = new Color(badgeColor.r, badgeColor.g, badgeColor.b, 0.55f);
-                row.nameText.text = $"⚔️ {opp.username}";
+                row.nameText.text = opp.username;
                 row.levelBadgeText.text = $"LV {opp.subjectLevel} • {SubjectTierSystem.GetBadgeNameForLevel(opp.subjectLevel).ToUpperInvariant()} BADGE";
                 row.levelBadgeText.color = badgeColor;
                 row.pointsRecordText.text = $"{oppPoints} PTS  •  20% Loss Stake: -{oppPenalty} PTS  •  {opp.pvpWins}W/{opp.pvpLosses}L";
@@ -431,7 +431,7 @@ namespace KnowledgeWarrior.UI
 
             _fightMonstersBtn = CreateButton("FightMonstersBtn", monsterCard, Cyan,
                 new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0),
-                new Vector2(0, 22), new Vector2(476, 64), "BATTLE MONSTERS & BOSS →", 23, DarkText, out _);
+                new Vector2(0, 22), new Vector2(476, 64), "BATTLE MONSTERS & BOSS", 23, DarkText, out _);
             _fightMonstersBtn.onClick.AddListener(() =>
             {
                 BattleAudioManager.Instance?.PlayButtonClick();
@@ -451,7 +451,7 @@ namespace KnowledgeWarrior.UI
                 r => Place(r, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -62), new Vector2(-40, 40)));
             CreateText("PvpDesc", pvpCard,
                 "Challenge a real user who is at your EXACT same level and badge tier in this subject.\n\n" +
-                "• Select your opponent from the Right-Hand Sidebar →\n" +
+                "• Select your opponent from the Right-Hand Sidebar\n" +
                 "• If your opponent loses: -20% point deduction to opponent\n" +
                 "• If you lose: -20% point deduction to you",
                 20, TextSoft, TextAlignmentOptions.TopLeft, false,
@@ -459,7 +459,7 @@ namespace KnowledgeWarrior.UI
 
             _openRealUsersBtn = CreateButton("RefreshRealUsersBtn", pvpCard, Gold,
                 new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0),
-                new Vector2(0, 22), new Vector2(476, 64), "REFRESH SAME-LEVEL USERS →", 22, DarkText, out _);
+                new Vector2(0, 22), new Vector2(476, 64), "REFRESH SAME-LEVEL USERS", 22, DarkText, out _);
             _openRealUsersBtn.onClick.AddListener(() =>
             {
                 BattleAudioManager.Instance?.PlayButtonClick();
@@ -514,7 +514,7 @@ namespace KnowledgeWarrior.UI
 
                 var challengeBtn = CreateButton("ChallengeBtn", rowFill, Gold,
                     new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f),
-                    new Vector2(-16, 0), new Vector2(168, 64), "FIGHT 1v1 →", 20, DarkText, out _);
+                    new Vector2(-16, 0), new Vector2(168, 64), "FIGHT 1v1", 20, DarkText, out _);
 
                 _opponentRows.Add(new OpponentRowWidgets
                 {

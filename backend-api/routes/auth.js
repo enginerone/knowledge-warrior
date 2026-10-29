@@ -137,6 +137,12 @@ router.post('/login', async (req, res, next) => {
     }
 
     const user = result.rows[0];
+    if (user.is_banned) {
+      return res.status(403).json({
+        error: 'This account has been banned (disabled) by an administrator.',
+      });
+    }
+
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
       return res.status(401).json({ error: 'Incorrect password. Use Forgot Password if you need to reset it via Email OTP.' });
@@ -317,12 +323,16 @@ router.post('/reset-password', async (req, res, next) => {
 router.get('/me', authenticateToken, async (req, res, next) => {
   try {
     const result = await db.query(
-      'SELECT id, username, email, role, total_xp, current_level, created_at, last_synced_at FROM users WHERE id = $1',
+      'SELECT id, username, email, role, total_xp, current_level, COALESCE(is_banned, false) AS is_banned, created_at, last_synced_at FROM users WHERE id = $1',
       [req.user.id]
     );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (result.rows[0].is_banned) {
+      return res.status(403).json({ error: 'This account has been banned (disabled) by an administrator.' });
     }
 
     res.json({ user: result.rows[0] });

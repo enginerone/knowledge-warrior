@@ -111,7 +111,7 @@ export default function DashboardOverview({ stats, health, onNavigate }) {
                 e.currentTarget.style.borderColor = 'var(--border-color)';
               }}
             >
-              {c.actionLabel} →
+              {c.actionLabel}
             </button>
           </div>
         ))}
