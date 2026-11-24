@@ -1,0 +1,32 @@
+# .gitattributes
+# Normalize all text files to LF (prevents "LF will be replaced by CRLF" warnings).
+* text=auto eol=lf
+
+# Code
+*.cs text diff=csharp
+*.js text
+*.jsx text
+*.json text
+*.md text
+
+# Unity YAML assets (use Unity's Smart Merge tool: unityyamlmerge)
+*.mat merge=unityyamlmerge eol=lf
+*.anim merge=unityyamlmerge eol=lf
+*.prefab merge=unityyamlmerge eol=lf
+*.unity merge=unityyamlmerge eol=lf
+*.asset merge=unityyamlmerge eol=lf
+*.meta merge=unityyamlmerge eol=lf
+*.controller merge=unityyamlmerge eol=lf
+
+# Binary files (never touch line endings / never diff)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.psd binary
+*.ttf binary
+*.otf binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.pdf binary
+*.unitypackage binary
