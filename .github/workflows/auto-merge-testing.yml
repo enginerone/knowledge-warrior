@@ -1,0 +1,75 @@
+name: Auto Merge Testing to Main
+
+on:
+  push:
+    branches:
+      - testing
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-merge-testing-to-main
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate Backend and Admin Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout testing branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Block tracked secret or private key files
+        run: |
+          FORBIDDEN=$(git ls-files | grep -E '(^|/)\.env($|\.)|\.(keystore|jks|pem|key|p12|pfx)$' | grep -vE '\.env\.example$' || true)
+          if [ -n "$FORBIDDEN" ]; then
+            echo "Blocked sensitive files detected in Git index:"
+            echo "$FORBIDDEN"
+            exit 1
+          fi
+
+      - name: Check Backend API JavaScript syntax
+        working-directory: backend-api
+        run: |
+          for file in server.js db.js middleware/*.js routes/*.js services/*.js scripts/*.js; do
+            if [ -f "$file" ]; then
+              node --check "$file"
+            fi
+          done
+
+      - name: Install and build Admin Frontend
+        working-directory: admin-frontend
+        run: |
+          npm ci
+          npm run build
+
+  merge-to-main:
+    name: Merge Testing into Main
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge testing branch into main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main testing
+          git checkout -B main origin/main
+          if git merge-base --is-ancestor origin/testing origin/main; then
+            echo "Main branch already contains all commits from testing."
+            exit 0
+          fi
+          git merge origin/testing --no-edit -m "chore(release): automatically merge testing into main"
+          git push origin main
