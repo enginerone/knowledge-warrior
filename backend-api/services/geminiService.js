@@ -89,7 +89,12 @@ function parseAndSanitizeQuestions(responseText, defaultDifficulty, existingQues
     );
 
     const resolvedDifficulty = item.difficulty || defaultDifficulty;
+    const validTypes = ['multiple_choice', 'true_false', 'fill_blank', 'ordering', 'spot_bug'];
+    const rawType = typeof item.questionType === 'string' ? item.questionType.trim().toLowerCase() : 'multiple_choice';
+    const resolvedType = validTypes.includes(rawType) ? rawType : 'multiple_choice';
+
     sanitized.push({
+      questionType: resolvedType,
       questionText: item.questionText.trim(),
       options: shuffledOpts,
       correctIndex: shuffledIdx,
@@ -211,8 +216,87 @@ ${textContent.slice(0, 10000)}
   );
 }
 
+/**
+ * Generates strictly subject-specific, non-repeating curriculum questions for a given subject,
+ * topic, and difficulty tier without requiring a PDF upload.
+ */
+async function generateSubjectCurriculumQuestions(options = {}) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not configured in environment variables');
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const subject = (options.subject || 'Programming').trim();
+  const topic = (options.topic || subject).trim();
+  const difficulty = Math.max(1, Math.min(4, parseInt(options.difficulty, 10) || 1));
+  const count = Math.max(1, Math.min(15, parseInt(options.count, 10) || 8));
+  const existingQuestions = Array.isArray(options.existingQuestions) ? options.existingQuestions : [];
+
+  const tierDescription = {
+    1: 'Beginner Tier (Levels 1-15): foundational definitions, basic syntax, and core principles',
+    2: 'Intermediate Tier (Levels 16-30): applied problem solving, code tracing, and standard mechanisms',
+    3: 'Advanced Tier (Levels 31-60): architectural trade-offs, performance analysis, and subtle edge cases',
+    4: 'Expert Tier (Levels 61-100): deep internals, distributed or low-level behavior, and complex debugging',
+  }[difficulty];
+
+  const exclusionBlock =
+    existingQuestions.length > 0
+      ? `\nExisting Questions for ${subject} (DO NOT repeat, rephrase, or overlap with any of these):\n${existingQuestions
+          .slice(-80)
+          .map((qText, idx) => `${idx + 1}. ${qText}`)
+          .join('\n')}\n`
+      : '';
+
+  const prompt = `
+You are a senior computer science curriculum author for the educational RPG "Knowledge Warrior".
+Generate ${count} completely unique, strictly subject-specific combat questions EXCLUSIVELY for the subject "${subject}" (focusing on "${topic}" and closely related subtopics within "${subject}").
+
+Strict Requirements:
+1. Every question MUST belong strictly to "${subject}" and match ${tierDescription}. Never include questions from unrelated subjects.
+2. Mix questionType values across: "multiple_choice", "true_false", "fill_blank", "ordering", and "spot_bug".
+3. Every question MUST have exactly 4 distinct non-empty string options in "options" and a valid "correctIndex" (0 to 3).
+4. Never repeat or closely paraphrase any question in this batch or in the Existing Questions list below.
+5. Provide a clear, accurate 1-2 sentence "explanation" for every question.
+6. Return ONLY a valid JSON array matching this schema with no Markdown fences:
+
+[
+  {
+    "questionType": "multiple_choice",
+    "questionText": "Question prompt strictly about ${subject}?",
+    "options": ["Choice A", "Choice B", "Choice C", "Choice D"],
+    "correctIndex": 0,
+    "explanation": "Concise technical explanation.",
+    "difficulty": ${difficulty},
+    "xpReward": ${difficulty * 20}
+  }
+]
+${exclusionBlock}
+`;
+
+  const candidateModels = getCandidateModels();
+  const errors = [];
+
+  for (const modelName of candidateModels) {
+    try {
+      const responseText = await callModelWithTimeout(genAI, modelName, prompt, MODEL_TIMEOUT_MS);
+      const questions = parseAndSanitizeQuestions(responseText, difficulty, existingQuestions);
+      if (questions.length > 0) {
+        return questions.slice(0, count);
+      }
+      throw new Error(`Model ${modelName} returned 0 unique valid questions`);
+    } catch (err) {
+      const reason = err.name === 'AbortError' ? `timed out after ${MODEL_TIMEOUT_MS}ms` : err.message;
+      errors.push(`${modelName}: ${reason}`);
+    }
+  }
+
+  throw new Error(`Gemini subject replenishment failed (${errors.join(' | ')})`);
+}
+
 module.exports = {
   generateQuestionsFromText,
+  generateSubjectCurriculumQuestions,
   parseAndSanitizeQuestions,
   shuffleOptions,
   validateQuestion,

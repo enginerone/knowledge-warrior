@@ -103,6 +103,7 @@ namespace KnowledgeWarrior.Data
         public string versionHash;
         public int count;
         public string updatedAt;
+        public string[] seenQuestionIds;
         public QuestionData[] questions;
     }
 }

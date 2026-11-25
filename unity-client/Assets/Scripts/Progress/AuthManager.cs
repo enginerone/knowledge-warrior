@@ -1,20 +1,27 @@
 using System;
 using System.Collections;
 using System.Text;
+using KnowledgeWarrior.Data;
 using UnityEngine;
 using UnityEngine.Networking;
 
 namespace KnowledgeWarrior.Progress
 {
     /// <summary>
-    /// Handles in-game player registration, persistent database-backed login authentication,
-    /// automatic session restoration when reopening the application, and email OTP password recovery.
+    /// Online-only authentication and live PostgreSQL profile session manager.
+    /// Handles account registration, persistent login verification, live per-subject
+    /// progression loading, and email OTP password recovery.
     /// </summary>
     public class AuthManager : MonoBehaviour
     {
-        public const string UsernamePrefKey = "kw_auth_username";
-        public const string EmailPrefKey = "kw_auth_email";
-        public const string UserIdPrefKey = "kw_auth_user_id";
+        public static string UsernamePrefKey =>
+            SyncManager.IsLocalDevelopmentEnvironment ? "kw_local_auth_username" : "kw_cloud_auth_username";
+
+        public static string EmailPrefKey =>
+            SyncManager.IsLocalDevelopmentEnvironment ? "kw_local_auth_email" : "kw_cloud_auth_email";
+
+        public static string UserIdPrefKey =>
+            SyncManager.IsLocalDevelopmentEnvironment ? "kw_local_auth_user_id" : "kw_cloud_auth_user_id";
 
         public static AuthManager Instance { get; private set; }
 
@@ -26,13 +33,14 @@ namespace KnowledgeWarrior.Progress
         public string AuthenticatedUsername => PlayerPrefs.GetString(UsernamePrefKey, string.Empty);
         public string AuthenticatedEmail => PlayerPrefs.GetString(EmailPrefKey, string.Empty);
         public string AuthenticatedUserId => PlayerPrefs.GetString(UserIdPrefKey, string.Empty);
+        public string LastOtpPreviewUrl { get; private set; }
 
         public event Action OnAuthStateChanged;
 
         private string ApiBaseUrl =>
             SyncManager.Instance != null
                 ? SyncManager.Instance.EffectiveApiBaseUrl
-                : PlayerPrefs.GetString(SyncManager.ApiUrlPrefKey, "http://localhost:5000/api/v1").TrimEnd('/');
+                : SyncManager.ResolveApiBaseUrl();
 
         private void Awake()
         {
@@ -45,30 +53,19 @@ namespace KnowledgeWarrior.Progress
 
             if (IsAuthenticated && !string.IsNullOrWhiteSpace(AuthenticatedUsername))
             {
-                var p = ProgressManager.Current;
-                if (p.playerName != AuthenticatedUsername)
-                {
-                    p.playerName = AuthenticatedUsername;
-                    ProgressManager.Save();
-                }
+                ProgressManager.Current.playerName = AuthenticatedUsername;
             }
         }
 
-        private void Start()
-        {
-            if (IsAuthenticated)
-            {
-                StartCoroutine(RefreshAuthenticatedProfileRoutine());
-            }
-        }
-
-        /// <summary>
-        /// Registers a new user account in PostgreSQL (<c>POST /api/v1/auth/register</c>).
-        /// Requires a unique username, a real email address, and a password.
-        /// </summary>
         public void Register(string username, string email, string password, Action<bool, string> onComplete)
         {
             if (IsBusy) return;
+            if (SyncManager.Instance != null && !SyncManager.Instance.IsOnline)
+            {
+                onComplete?.Invoke(false, "Internet connection required. Connect to Wi-Fi or mobile data before registering.");
+                return;
+            }
+
             string cleanUser = (username ?? string.Empty).Trim();
             string cleanEmail = (email ?? string.Empty).Trim();
 
@@ -84,34 +81,25 @@ namespace KnowledgeWarrior.Progress
                 return;
             }
 
-            var p = ProgressManager.Current;
             var payload = new RegisterRequestDto
             {
                 username = cleanUser,
                 email = cleanEmail,
                 password = password,
-                clientHash = SyncManager.ComputeClientHash(p.deviceId),
-                totalXp = p.totalXp,
             };
 
             StartCoroutine(RegisterRoutine($"{ApiBaseUrl}/auth/register", JsonUtility.ToJson(payload), onComplete));
         }
 
-        /// <summary>
-        /// Backwards-compatible alias that registers the account with username, password, and email.
-        /// </summary>
-        public void RegisterAndLinkGuest(string username, string password, string email, Action<bool, string> onComplete)
-        {
-            Register(username, email, password, onComplete);
-        }
-
-        /// <summary>
-        /// Authenticates against the PostgreSQL user record (<c>POST /api/v1/auth/login</c>)
-        /// and persists the session so the user never needs to log in again when reopening the app.
-        /// </summary>
         public void Login(string username, string password, Action<bool, string> onComplete)
         {
             if (IsBusy) return;
+            if (SyncManager.Instance != null && !SyncManager.Instance.IsOnline)
+            {
+                onComplete?.Invoke(false, "Internet connection required. Connect to Wi-Fi or mobile data before signing in.");
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
                 onComplete?.Invoke(false, "Username and password are required.");
@@ -127,14 +115,15 @@ namespace KnowledgeWarrior.Progress
             StartCoroutine(LoginRoutine($"{ApiBaseUrl}/auth/login", JsonUtility.ToJson(payload), onComplete));
         }
 
-        public string LastOtpPreviewUrl { get; private set; }
-
-        /// <summary>
-        /// Step 1 of Forgot Password: sends a 6-digit OTP to the user's registered email (<c>POST /api/v1/auth/forgot-password</c>).
-        /// </summary>
         public void RequestPasswordResetOtp(string email, Action<bool, string> onComplete)
         {
             if (IsBusy) return;
+            if (SyncManager.Instance != null && !SyncManager.Instance.IsOnline)
+            {
+                onComplete?.Invoke(false, "Internet connection required to send a password recovery OTP.");
+                return;
+            }
+
             string cleanEmail = (email ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(cleanEmail) || !cleanEmail.Contains("@"))
             {
@@ -150,12 +139,15 @@ namespace KnowledgeWarrior.Progress
             }));
         }
 
-        /// <summary>
-        /// Step 2 of Forgot Password: verifies the 6-digit OTP (<c>POST /api/v1/auth/verify-otp</c>).
-        /// </summary>
         public void VerifyPasswordResetOtp(string email, string otp, Action<bool, string> onComplete)
         {
             if (IsBusy) return;
+            if (SyncManager.Instance != null && !SyncManager.Instance.IsOnline)
+            {
+                onComplete?.Invoke(false, "Internet connection required to verify OTP.");
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(otp))
             {
                 onComplete?.Invoke(false, "Please enter the 6-digit OTP sent to your email.");
@@ -169,12 +161,15 @@ namespace KnowledgeWarrior.Progress
             }));
         }
 
-        /// <summary>
-        /// Step 3 of Forgot Password: verifies the OTP and sets the new password (<c>POST /api/v1/auth/reset-password</c>).
-        /// </summary>
         public void ResetPasswordWithOtp(string email, string otp, string newPassword, Action<bool, string, string> onComplete)
         {
             if (IsBusy) return;
+            if (SyncManager.Instance != null && !SyncManager.Instance.IsOnline)
+            {
+                onComplete?.Invoke(false, "Internet connection required to update your password.", null);
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(otp) || string.IsNullOrWhiteSpace(newPassword))
             {
                 onComplete?.Invoke(false, "Email, 6-digit OTP, and new password are required.", null);
@@ -191,169 +186,343 @@ namespace KnowledgeWarrior.Progress
             StartCoroutine(SimplePostRoutine($"{ApiBaseUrl}/auth/reset-password", JsonUtility.ToJson(payload), onComplete));
         }
 
-        /// <summary>Signs out of the authenticated account only when explicitly requested by the user.</summary>
         public void Logout()
         {
-            PlayerPrefs.DeleteKey(SyncManager.AuthTokenPrefKey);
-            PlayerPrefs.DeleteKey(UsernamePrefKey);
-            PlayerPrefs.DeleteKey(EmailPrefKey);
-            PlayerPrefs.DeleteKey(UserIdPrefKey);
-            PlayerPrefs.Save();
+            ClearStoredCredentials();
+            ProgressManager.ResetSessionState();
+            FindAnyObjectByType<QuestionManager>()?.ResetSeenQuestionsForLogout();
             OnAuthStateChanged?.Invoke();
         }
 
-        /// <summary>Silently syncs the user's per-subject progression to the backend.</summary>
-        public void SyncSubjectProgressToServer(string subject)
+        /// <summary>
+        /// Verifies the stored JWT against GET /api/v1/auth/me and hydrates live per-subject
+        /// progression from GET /api/v1/sync/subject-progress.
+        /// Callback parameters: (bool networkOk, bool authenticatedOk, string errorMessage).
+        /// </summary>
+        public IEnumerator ValidateSessionAndLoadProgressRoutine(Action<bool, bool, string> onComplete)
         {
-            if (!IsAuthenticated || string.IsNullOrWhiteSpace(subject)) return;
-            var sp = ProgressManager.GetSubjectProgress(subject);
-            var dto = new SubjectSyncRequestDto
+            if (!IsAuthenticated)
             {
-                subject = sp.subject,
-                subjectLevel = sp.level,
-                subjectXp = sp.points
-            };
-            StartCoroutine(PostAuthenticatedSilentRoutine($"{ApiBaseUrl}/pvp/subject-progress", JsonUtility.ToJson(dto)));
+                onComplete?.Invoke(true, false, null);
+                yield break;
+            }
+
+            if (SyncManager.Instance != null && !SyncManager.Instance.IsOnline)
+            {
+                onComplete?.Invoke(false, false, "No internet connection detected. Connect to the internet to verify your account.");
+                yield break;
+            }
+
+            using (var meReq = UnityWebRequest.Get($"{ApiBaseUrl}/auth/me"))
+            {
+                meReq.timeout = requestTimeoutSeconds;
+                meReq.SetRequestHeader("Authorization", $"Bearer {Token}");
+                yield return meReq.SendWebRequest();
+
+                if (meReq.result == UnityWebRequest.Result.ConnectionError ||
+                    meReq.result == UnityWebRequest.Result.DataProcessingError)
+                {
+                    string err = $"Cannot reach authentication server: {meReq.error}";
+                    SyncManager.Instance?.ReportConnectionLost(err);
+                    onComplete?.Invoke(false, false, err);
+                    yield break;
+                }
+
+                if (meReq.result != UnityWebRequest.Result.Success)
+                {
+                    string err = TryExtractErrorMessage(meReq.downloadHandler?.text) ?? "Saved session expired. Please sign in again.";
+                    ClearStoredCredentials();
+                    ProgressManager.ResetSessionState();
+                    onComplete?.Invoke(true, false, err);
+                    yield break;
+                }
+            }
+
+            bool profileOk = false;
+            string profileErr = null;
+            yield return RefreshAuthenticatedProfileRoutine((ok, err) =>
+            {
+                profileOk = ok;
+                profileErr = err;
+            });
+
+            if (!profileOk)
+            {
+                onComplete?.Invoke(false, false, profileErr ?? "Failed to load live subject progression from PostgreSQL.");
+                yield break;
+            }
+
+            OnAuthStateChanged?.Invoke();
+            onComplete?.Invoke(true, true, null);
         }
 
-        private IEnumerator RefreshAuthenticatedProfileRoutine()
+        public IEnumerator RefreshAuthenticatedProfileRoutine(Action<bool, string> onComplete = null)
         {
-            using var req = UnityWebRequest.Get($"{ApiBaseUrl}/pvp/subject-progress");
+            if (!IsAuthenticated)
+            {
+                onComplete?.Invoke(false, "Not signed in.");
+                yield break;
+            }
+
+            using var req = UnityWebRequest.Get($"{ApiBaseUrl}/sync/subject-progress");
             req.timeout = requestTimeoutSeconds;
             req.SetRequestHeader("Authorization", $"Bearer {Token}");
             yield return req.SendWebRequest();
 
-            if (req.result == UnityWebRequest.Result.Success && !string.IsNullOrWhiteSpace(req.downloadHandler?.text))
+            if (req.result == UnityWebRequest.Result.ConnectionError ||
+                req.result == UnityWebRequest.Result.DataProcessingError)
             {
-                try
-                {
-                    var res = JsonUtility.FromJson<SubjectProgressListDto>(req.downloadHandler.text);
-                    if (res?.subjects != null)
-                    {
-                        foreach (var item in res.subjects)
-                        {
-                            if (item == null || string.IsNullOrWhiteSpace(item.subject)) continue;
-                            ProgressManager.SetSubjectProgressFromServer(
-                                item.subject,
-                                item.subjectLevel,
-                                item.subjectXp,
-                                item.pvpWins,
-                                item.pvpLosses);
-                        }
-                        OnAuthStateChanged?.Invoke();
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.LogWarning($"[AuthManager] Could not parse subject progress: {e.Message}");
-                }
-            }
-        }
-
-        private IEnumerator PostAuthenticatedSilentRoutine(string url, string jsonBody)
-        {
-            using var req = BuildJsonPost(url, jsonBody);
-            if (IsAuthenticated)
-            {
-                req.SetRequestHeader("Authorization", $"Bearer {Token}");
-            }
-            yield return req.SendWebRequest();
-        }
-
-        private IEnumerator RegisterRoutine(string url, string jsonBody, Action<bool, string> onComplete)
-        {
-            IsBusy = true;
-            using var req = BuildJsonPost(url, jsonBody);
-            yield return req.SendWebRequest();
-            IsBusy = false;
-
-            string responseText = req.downloadHandler?.text ?? string.Empty;
-            if (req.result != UnityWebRequest.Result.Success)
-            {
-                string errMsg = TryExtractErrorMessage(responseText) ?? $"Registration failed ({req.responseCode}): {req.error}";
-                onComplete?.Invoke(false, errMsg);
+                string err = $"Lost connection while loading subject progression: {req.error}";
+                SyncManager.Instance?.ReportConnectionLost(err);
+                onComplete?.Invoke(false, err);
                 yield break;
             }
 
-            var res = JsonUtility.FromJson<AuthResponseDto>(responseText);
-            onComplete?.Invoke(true, res?.message ?? "Registration successful! Please log in with your username and password.");
-        }
-
-        private IEnumerator LoginRoutine(string url, string jsonBody, Action<bool, string> onComplete)
-        {
-            IsBusy = true;
-            using var req = BuildJsonPost(url, jsonBody);
-            yield return req.SendWebRequest();
-            IsBusy = false;
-
-            string responseText = req.downloadHandler?.text ?? string.Empty;
-            if (req.result != UnityWebRequest.Result.Success)
+            if (req.result != UnityWebRequest.Result.Success || string.IsNullOrWhiteSpace(req.downloadHandler?.text))
             {
-                string errMsg = TryExtractErrorMessage(responseText) ?? $"Login failed ({req.responseCode}): {req.error}";
-                onComplete?.Invoke(false, errMsg);
+                string err = TryExtractErrorMessage(req.downloadHandler?.text) ?? $"Failed to load subject progress ({req.responseCode}).";
+                onComplete?.Invoke(false, err);
                 yield break;
             }
 
             try
             {
+                var res = JsonUtility.FromJson<SubjectProgressListDto>(req.downloadHandler.text);
+                if (res?.player != null)
+                {
+                    ProgressManager.ApplyServerPlayerSummary(
+                        res.player.username,
+                        res.player.currentLevel,
+                        res.player.totalXp,
+                        res.player.globalRank,
+                        res.player.battlesWon,
+                        res.player.battlesLost,
+                        res.player.questionsAnswered,
+                        res.player.correctAnswers);
+                }
+
+                if (res?.subjects != null)
+                {
+                    foreach (var item in res.subjects)
+                    {
+                        if (item == null || string.IsNullOrWhiteSpace(item.subject)) continue;
+                        ProgressManager.SetSubjectProgressFromServer(
+                            item.subject,
+                            item.subjectLevel,
+                            item.subjectXp,
+                            item.subjectPoints);
+                    }
+                }
+
+                var qm = FindAnyObjectByType<QuestionManager>();
+                if (qm != null)
+                {
+                    qm.SetSeenQuestionIds(res?.seenQuestionIds, resetExisting: true);
+                }
+
+                OnAuthStateChanged?.Invoke();
+                onComplete?.Invoke(true, null);
+            }
+            catch (Exception e)
+            {
+                onComplete?.Invoke(false, $"Could not parse subject progress response: {e.Message}");
+            }
+        }
+
+        private IEnumerator RegisterRoutine(string url, string jsonBody, Action<bool, string> onComplete)
+        {
+            IsBusy = true;
+            UnityWebRequest req = BuildJsonPost(url, jsonBody);
+            yield return SendWithLocalhostFallbackRoutine(req, "/auth/register", jsonBody, updatedReq => req = updatedReq);
+            IsBusy = false;
+
+            using (req)
+            {
+                string responseText = req.downloadHandler?.text ?? string.Empty;
+                if (req.result == UnityWebRequest.Result.ConnectionError)
+                {
+                    string err = $"Cannot connect to server: {req.error}";
+                    SyncManager.Instance?.ReportConnectionLost(err);
+                    onComplete?.Invoke(false, err);
+                    yield break;
+                }
+
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    string errMsg = TryExtractErrorMessage(responseText) ?? $"Registration failed ({req.responseCode}): {req.error}";
+                    onComplete?.Invoke(false, errMsg);
+                    yield break;
+                }
+
                 var res = JsonUtility.FromJson<AuthResponseDto>(responseText);
+                onComplete?.Invoke(true, res?.message ?? "Registration successful! Please log in with your username and password.");
+            }
+        }
+
+        private IEnumerator LoginRoutine(string url, string jsonBody, Action<bool, string> onComplete)
+        {
+            IsBusy = true;
+            UnityWebRequest req = BuildJsonPost(url, jsonBody);
+            yield return SendWithLocalhostFallbackRoutine(req, "/auth/login", jsonBody, updatedReq => req = updatedReq);
+            IsBusy = false;
+
+            using (req)
+            {
+                string responseText = req.downloadHandler?.text ?? string.Empty;
+                if (req.result == UnityWebRequest.Result.ConnectionError)
+                {
+                    string err = $"Cannot connect to server: {req.error}";
+                    SyncManager.Instance?.ReportConnectionLost(err);
+                    onComplete?.Invoke(false, err);
+                    yield break;
+                }
+
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    string errMsg = TryExtractErrorMessage(responseText) ?? $"Login failed ({req.responseCode}): {req.error}";
+                    onComplete?.Invoke(false, errMsg);
+                    yield break;
+                }
+
+                AuthResponseDto res;
+                try
+                {
+                    res = JsonUtility.FromJson<AuthResponseDto>(responseText);
+                }
+                catch (Exception e)
+                {
+                    onComplete?.Invoke(false, $"Auth parse error: {e.Message}");
+                    yield break;
+                }
+
                 if (res == null || string.IsNullOrWhiteSpace(res.token) || res.user == null)
                 {
                     onComplete?.Invoke(false, "Invalid response from authentication server.");
                     yield break;
                 }
 
+                ProgressManager.ResetSessionState();
                 PlayerPrefs.SetString(SyncManager.AuthTokenPrefKey, res.token);
                 PlayerPrefs.SetString(UsernamePrefKey, res.user.username ?? string.Empty);
                 PlayerPrefs.SetString(EmailPrefKey, res.user.email ?? string.Empty);
                 PlayerPrefs.SetString(UserIdPrefKey, res.user.id ?? string.Empty);
                 PlayerPrefs.Save();
 
-                ApplyServerProfile(res.user);
-                StartCoroutine(RefreshAuthenticatedProfileRoutine());
-                OnAuthStateChanged?.Invoke();
+                ProgressManager.ApplyServerPlayerSummary(
+                    res.user.username,
+                    res.user.currentLevel,
+                    res.user.totalXp,
+                    0,
+                    res.user.battlesWon,
+                    res.user.battlesLost,
+                    0,
+                    0);
 
-                if (SyncManager.Instance != null)
+                bool hydratedOk = false;
+                string hydrateErr = null;
+                IsBusy = true;
+                yield return RefreshAuthenticatedProfileRoutine((ok, err) =>
                 {
-                    SyncManager.Instance.TriggerSync(includeQuestions: false);
+                    hydratedOk = ok;
+                    hydrateErr = err;
+                });
+                IsBusy = false;
+
+                if (!hydratedOk)
+                {
+                    onComplete?.Invoke(false, hydrateErr ?? "Connected to account, failed to load live subject progress.");
+                    yield break;
                 }
 
+                OnAuthStateChanged?.Invoke();
                 onComplete?.Invoke(true, res.message ?? $"Authenticated as {res.user.username}!");
-            }
-            catch (Exception e)
-            {
-                onComplete?.Invoke(false, $"Auth parse error: {e.Message}");
             }
         }
 
         private IEnumerator SimplePostRoutine(string url, string jsonBody, Action<bool, string, string> onComplete)
         {
             IsBusy = true;
-            using var req = BuildJsonPost(url, jsonBody);
-            yield return req.SendWebRequest();
+            string endpointSuffix = ExtractEndpointSuffix(url);
+            UnityWebRequest req = BuildJsonPost(url, jsonBody);
+            yield return SendWithLocalhostFallbackRoutine(req, endpointSuffix, jsonBody, updatedReq => req = updatedReq);
             IsBusy = false;
 
-            string responseText = req.downloadHandler?.text ?? string.Empty;
-            if (req.result != UnityWebRequest.Result.Success)
+            using (req)
             {
-                string errMsg = TryExtractErrorMessage(responseText) ?? $"Request failed ({req.responseCode}): {req.error}";
-                onComplete?.Invoke(false, errMsg, null);
-                yield break;
-            }
-
-            try
-            {
-                var res = JsonUtility.FromJson<GenericAuthMessageDto>(responseText);
-                if (!string.IsNullOrWhiteSpace(res?.previewUrl))
+                string responseText = req.downloadHandler?.text ?? string.Empty;
+                if (req.result == UnityWebRequest.Result.ConnectionError)
                 {
-                    LastOtpPreviewUrl = res.previewUrl;
+                    string err = $"Cannot connect to server: {req.error}";
+                    SyncManager.Instance?.ReportConnectionLost(err);
+                    onComplete?.Invoke(false, err, null);
+                    yield break;
                 }
-                onComplete?.Invoke(true, res?.message ?? "Success!", res?.username);
+
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    string errMsg = TryExtractErrorMessage(responseText) ?? $"Request failed ({req.responseCode}): {req.error}";
+                    onComplete?.Invoke(false, errMsg, null);
+                    yield break;
+                }
+
+                try
+                {
+                    var res = JsonUtility.FromJson<GenericAuthMessageDto>(responseText);
+                    if (!string.IsNullOrWhiteSpace(res?.previewUrl))
+                    {
+                        LastOtpPreviewUrl = res.previewUrl;
+                    }
+                    onComplete?.Invoke(true, res?.message ?? "Success!", res?.username);
+                }
+                catch
+                {
+                    onComplete?.Invoke(true, "Success!", null);
+                }
             }
-            catch
+        }
+
+        private IEnumerator SendWithLocalhostFallbackRoutine(
+            UnityWebRequest initialReq,
+            string endpointSuffix,
+            string jsonBody,
+            Action<UnityWebRequest> onReplacedRequest)
+        {
+            yield return initialReq.SendWebRequest();
+
+            if (SyncManager.IsLocalDevelopmentEnvironment &&
+                !Application.platform.Equals(RuntimePlatform.Android) &&
+                initialReq.result == UnityWebRequest.Result.ConnectionError &&
+                !string.IsNullOrWhiteSpace(endpointSuffix) &&
+                !initialReq.url.StartsWith(SyncManager.DefaultLocalApiUrl, StringComparison.OrdinalIgnoreCase))
             {
-                onComplete?.Invoke(true, "Success!", null);
+                string fallbackUrl = $"{SyncManager.DefaultLocalApiUrl}{endpointSuffix}";
+                var retryReq = BuildJsonPost(fallbackUrl, jsonBody);
+                yield return retryReq.SendWebRequest();
+
+                if (retryReq.result != UnityWebRequest.Result.ConnectionError)
+                {
+                    initialReq.Dispose();
+                    SyncManager.SetCustomApiBaseUrl(SyncManager.DefaultLocalApiUrl);
+                    onReplacedRequest?.Invoke(retryReq);
+                    yield break;
+                }
+                retryReq.Dispose();
             }
+        }
+
+        private static void ClearStoredCredentials()
+        {
+            PlayerPrefs.DeleteKey(SyncManager.AuthTokenPrefKey);
+            PlayerPrefs.DeleteKey(UsernamePrefKey);
+            PlayerPrefs.DeleteKey(EmailPrefKey);
+            PlayerPrefs.DeleteKey(UserIdPrefKey);
+            PlayerPrefs.Save();
+        }
+
+        private static string ExtractEndpointSuffix(string fullUrl)
+        {
+            int idx = fullUrl.IndexOf("/auth/", StringComparison.OrdinalIgnoreCase);
+            return idx >= 0 ? fullUrl.Substring(idx) : string.Empty;
         }
 
         private UnityWebRequest BuildJsonPost(string url, string jsonBody)
@@ -365,19 +534,6 @@ namespace KnowledgeWarrior.Progress
             req.timeout = requestTimeoutSeconds;
             req.SetRequestHeader("Content-Type", "application/json");
             return req;
-        }
-
-        private static void ApplyServerProfile(AuthUserDto user)
-        {
-            var p = ProgressManager.Current;
-            p.playerName = user.username;
-
-            if (user.totalXp > p.totalXp)
-            {
-                int delta = user.totalXp - p.totalXp;
-                ProgressManager.AddXp(delta);
-            }
-            ProgressManager.Save();
         }
 
         private static string TryExtractErrorMessage(string json)
@@ -400,8 +556,6 @@ namespace KnowledgeWarrior.Progress
             public string username;
             public string email;
             public string password;
-            public string clientHash;
-            public int totalXp;
         }
 
         [Serializable]
@@ -458,14 +612,22 @@ namespace KnowledgeWarrior.Progress
             public string role;
             public int totalXp;
             public int currentLevel;
+            public int battlesWon;
+            public int battlesLost;
         }
 
         [Serializable]
-        private class SubjectSyncRequestDto
+        private class SubjectProgressPlayerDto
         {
-            public string subject;
-            public int subjectLevel;
-            public int subjectXp;
+            public string id;
+            public string username;
+            public int totalXp;
+            public int currentLevel;
+            public int globalRank;
+            public int battlesWon;
+            public int battlesLost;
+            public int questionsAnswered;
+            public int correctAnswers;
         }
 
         [Serializable]
@@ -474,14 +636,16 @@ namespace KnowledgeWarrior.Progress
             public string subject;
             public int subjectLevel;
             public int subjectXp;
+            public int subjectPoints;
+            public int xpToNextLevel;
             public string badgeTier;
-            public int pvpWins;
-            public int pvpLosses;
         }
 
         [Serializable]
         private class SubjectProgressListDto
         {
+            public SubjectProgressPlayerDto player;
+            public string[] seenQuestionIds;
             public SubjectProgressItemDto[] subjects;
         }
 

@@ -10,11 +10,10 @@ namespace KnowledgeWarrior.Combat
         MonsterClawSwipe = 2,
         MonsterVenomBolt = 3,
         MonsterCrushSlam = 4,
-        BossInfernoBreath = 5,
-        RivalWarriorStrike = 6
+        BossInfernoBreath = 5
     }
 
-    /// <summary>Data for one encounter in a subject biome or a 1v1 real-user duel.</summary>
+    /// <summary>Data for one monster or stage boss encounter in a subject biome.</summary>
     [Serializable]
     public class EnemyDefinition
     {
@@ -30,10 +29,6 @@ namespace KnowledgeWarrior.Combat
         public int attack = 12;
         public int xpReward = 30;
         public bool isBoss;
-        public bool isRealUserOpponent;
-        public string opponentUserId;
-        public int opponentSubjectLevel = 1;
-        public int opponentSubjectPoints = 120;
 
         [Header("Questions")]
         [Tooltip("Aligned question difficulty tier (1 = Beginner, 2 = Intermediate, 3 = Advanced, 4 = Expert).")]

@@ -71,12 +71,12 @@ namespace KnowledgeWarrior.Audio
             _sfxSource.mute = IsMuted;
         }
 
-        public void PlaySubjectThemeMusic(string subject, BadgeTier tier, bool isBossOrPvp = false)
+        public void PlaySubjectThemeMusic(string subject, BadgeTier tier, bool isBoss = false)
         {
-            string key = $"{(subject ?? "default").ToLowerInvariant()}_{tier}_{isBossOrPvp}";
+            string key = $"{(subject ?? "default").ToLowerInvariant()}_{tier}_{isBoss}";
             if (!_bgmCache.TryGetValue(key, out var clip) || clip == null)
             {
-                clip = SynthesizeThemeLoop(subject, tier, isBossOrPvp);
+                clip = SynthesizeThemeLoop(subject, tier, isBoss);
                 _bgmCache[key] = clip;
             }
 
@@ -130,7 +130,7 @@ namespace KnowledgeWarrior.Audio
             _clickClip = CreateSweepClip("ButtonClick", 0.05f, 880f, 1320f, 0.1f, false);
         }
 
-        private static AudioClip SynthesizeThemeLoop(string subject, BadgeTier tier, bool isBossOrPvp)
+        private static AudioClip SynthesizeThemeLoop(string subject, BadgeTier tier, bool isBoss)
         {
             float[] scale = GetSubjectScaleFrequencies(subject);
             float tempoMultiplier = tier switch
@@ -141,7 +141,7 @@ namespace KnowledgeWarrior.Audio
                 BadgeTier.Expert => 1.38f,
                 _ => 1.0f
             };
-            if (isBossOrPvp) tempoMultiplier *= 1.15f;
+            if (isBoss) tempoMultiplier *= 1.15f;
 
             float stepDuration = 0.24f / tempoMultiplier;
             int totalSteps = 16;
@@ -149,7 +149,7 @@ namespace KnowledgeWarrior.Audio
             int sampleCount = Mathf.Max(1024, Mathf.RoundToInt(duration * SampleRate));
             float[] data = new float[sampleCount];
 
-            int[] pattern = isBossOrPvp
+            int[] pattern = isBoss
                 ? new[] { 0, 3, 2, 4, 1, 4, 3, 5, 0, 3, 4, 5, 2, 4, 1, 0 }
                 : new[] { 0, 2, 4, 2, 1, 3, 4, 3, 0, 2, 5, 4, 3, 2, 1, 2 };
 

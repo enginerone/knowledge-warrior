@@ -17,20 +17,16 @@ namespace KnowledgeWarrior.Progress
         public string subject = "Programming";
         public int level = 1;
         public int xp = 0;
-        public int points = 120;
-        public int pvpWins = 0;
-        public int pvpLosses = 0;
+        public int points = 0;
     }
 
     /// <summary>
-    /// Central authority for per-subject levels (1 to 100), tier badges, aligned question difficulty,
-    /// and the 20% point deduction rule for 1v1 real-user battles.
+    /// Central authority for per-subject levels (1 to 100), tier badges, and aligned question difficulty.
     /// </summary>
     public static class SubjectTierSystem
     {
         public const int MinLevel = 1;
         public const int MaxLevel = 100;
-        public const float PvpLossDeductionRate = 0.20f;
 
         private static readonly Color BeginnerColor = new(0.24f, 0.90f, 0.63f, 1f);
         private static readonly Color IntermediateColor = new(0.30f, 0.88f, 1f, 1f);
@@ -100,12 +96,5 @@ namespace KnowledgeWarrior.Progress
             int clamped = Mathf.Clamp(level, MinLevel, MaxLevel);
             return 80 + (clamped - 1) * 25;
         }
-
-        public static int CalculateTwentyPercentDeduction(int currentPoints)
-        {
-            if (currentPoints <= 0) return 0;
-            return Mathf.Max(1, Mathf.RoundToInt(currentPoints * PvpLossDeductionRate));
-        }
     }
 }
-

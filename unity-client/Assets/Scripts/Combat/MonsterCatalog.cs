@@ -5,8 +5,7 @@ using UnityEngine;
 namespace KnowledgeWarrior.Combat
 {
     /// <summary>
-    /// Builds subject-themed and tier-scaled monster and boss stages (3 monsters + 1 boss per run),
-    /// as well as 1v1 Real-User Challenger definitions at the player's exact subject level.
+    /// Builds subject-themed and tier-scaled monster and boss stages (3 monsters + 1 boss per run).
     /// </summary>
     public static class MonsterCatalog
     {
@@ -39,7 +38,7 @@ namespace KnowledgeWarrior.Combat
                     displayName = names.stage1Monster,
                     sprite = slimeSprite != null ? slimeSprite : GetOrCreateMonsterSprite(names.stage1Monster, colors[0], false),
                     tint = colors[0],
-                    worldHeight = 2.4f,
+                    worldHeight = 1.85f,
                     attackGesture = AttackGestureType.MonsterClawSwipe,
                     maxHp = Mathf.RoundToInt(baseHp * 0.65f),
                     attack = Mathf.RoundToInt(baseAtk * 0.65f),
@@ -53,7 +52,7 @@ namespace KnowledgeWarrior.Combat
                     displayName = names.stage2Monster,
                     sprite = impSprite != null ? impSprite : GetOrCreateMonsterSprite(names.stage2Monster, colors[1], false),
                     tint = colors[1],
-                    worldHeight = 2.65f,
+                    worldHeight = 2.05f,
                     attackGesture = AttackGestureType.MonsterVenomBolt,
                     maxHp = Mathf.RoundToInt(baseHp * 0.82f),
                     attack = Mathf.RoundToInt(baseAtk * 0.80f),
@@ -67,7 +66,7 @@ namespace KnowledgeWarrior.Combat
                     displayName = names.stage3Monster,
                     sprite = golemSprite != null ? golemSprite : GetOrCreateMonsterSprite(names.stage3Monster, colors[2], false),
                     tint = colors[2],
-                    worldHeight = 2.95f,
+                    worldHeight = 2.25f,
                     attackGesture = AttackGestureType.MonsterCrushSlam,
                     maxHp = Mathf.RoundToInt(baseHp * 1.02f),
                     attack = Mathf.RoundToInt(baseAtk * 0.95f),
@@ -81,7 +80,7 @@ namespace KnowledgeWarrior.Combat
                     displayName = names.stage4Boss,
                     sprite = bossSprite != null ? bossSprite : GetOrCreateMonsterSprite(names.stage4Boss, colors[3], true),
                     tint = colors[3],
-                    worldHeight = 3.85f,
+                    worldHeight = 2.75f,
                     attackGesture = AttackGestureType.BossInfernoBreath,
                     maxHp = Mathf.RoundToInt(baseHp * 1.40f),
                     attack = Mathf.RoundToInt(baseAtk * 1.15f),
@@ -93,40 +92,7 @@ namespace KnowledgeWarrior.Combat
             };
         }
 
-        public static EnemyDefinition BuildRealUserOpponent(
-            string opponentUserId,
-            string opponentUsername,
-            string subject,
-            int exactSubjectLevel,
-            int opponentSubjectPoints,
-            Sprite heroSpriteFallback)
-        {
-            int clampedLevel = Mathf.Clamp(exactSubjectLevel, 1, SubjectTierSystem.MaxLevel);
-            var tier = SubjectTierSystem.GetTierForLevel(clampedLevel);
-            int alignedDifficulty = SubjectTierSystem.GetAlignedQuestionDifficulty(clampedLevel);
-            Color badgeColor = SubjectTierSystem.GetBadgeColor(tier);
-
-            return new EnemyDefinition
-            {
-                displayName = $"{opponentUsername} (LV {clampedLevel} {SubjectTierSystem.GetBadgeName(tier)})",
-                sprite = heroSpriteFallback != null ? heroSpriteFallback : GetOrCreateMonsterSprite(opponentUsername, badgeColor, false),
-                tint = Color.Lerp(Color.white, badgeColor, 0.38f),
-                worldHeight = 3.1f,
-                attackGesture = AttackGestureType.RivalWarriorStrike,
-                maxHp = ProgressManager.MaxHpForLevel(clampedLevel),
-                attack = ProgressManager.AttackForLevel(clampedLevel),
-                xpReward = 60 + clampedLevel * 8,
-                isBoss = false,
-                isRealUserOpponent = true,
-                opponentUserId = opponentUserId,
-                opponentSubjectLevel = clampedLevel,
-                opponentSubjectPoints = Mathf.Max(100, opponentSubjectPoints),
-                maxDifficulty = alignedDifficulty,
-                subject = subject
-            };
-        }
-
-        private static (string stage1Monster, string stage2Monster, string stage3Monster, string stage4Boss) GetSubjectMonsterRoster(
+        public static (string stage1Monster, string stage2Monster, string stage3Monster, string stage4Boss) GetSubjectMonsterRoster(
             string subject,
             BadgeTier tier)
         {

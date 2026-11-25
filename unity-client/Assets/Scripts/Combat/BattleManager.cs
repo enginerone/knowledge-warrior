@@ -1,14 +1,11 @@
-using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Text;
 using KnowledgeWarrior.Audio;
 using KnowledgeWarrior.Data;
 using KnowledgeWarrior.Progress;
 using KnowledgeWarrior.UI;
 using KnowledgeWarrior.Visuals;
 using UnityEngine;
-using UnityEngine.Networking;
 using Random = UnityEngine.Random;
 
 namespace KnowledgeWarrior.Combat
@@ -17,8 +14,8 @@ namespace KnowledgeWarrior.Combat
     public enum TurnType { Attack, Defend }
 
     /// <summary>
-    /// Orchestrates turn-based combat for both Subject Monster/Boss expeditions and
-    /// 1v1 Same-Level Real-User duels, coordinating UI, themes, audio, animations, and 20% PvP stakes.
+    /// Orchestrates online-only turn-based combat for Subject Monster and Boss expeditions,
+    /// enforcing live server connectivity, aligned question tiers, and sequential per-subject progression.
     /// </summary>
     public class BattleManager : MonoBehaviour
     {
@@ -56,6 +53,7 @@ namespace KnowledgeWarrior.Combat
         public BattleState State { get; private set; } = BattleState.Idle;
 
         private readonly List<EnemyDefinition> _baseSceneStages = new();
+        private readonly List<BattleAnswerLogDto> _battleAnswerLogs = new();
         private List<EnemyDefinition> _activeRunStages = new();
         private int _stageIndex;
         private TurnType _turn;
@@ -65,13 +63,22 @@ namespace KnowledgeWarrior.Combat
         private int _battleTotal;
         private int _battleXp;
         private bool _runFinished;
-        private bool _isPvpMatch;
+        private bool _subjectPoolExhausted;
+        private bool _backgroundQuestionRefreshInFlight;
+        private bool _sessionBootstrapped;
         private string _selectedSubject = "Programming";
         private Sprite _heroBaseSprite;
+        private GameObject _arenaBackgroundObject;
+        private static readonly Color StandaloneAuthScreenColor = new(0.03f, 0.04f, 0.11f, 1f);
+
+        private BattleResultSubmission _uncommittedBattleResult;
+        private bool _uncommittedBattleVictory;
+        private EnemyDefinition _uncommittedStageDef;
 
         private BiomeSelectModal _biomeModal;
         private SubjectLobbyModal _subjectLobbyModal;
         private AuthGateModal _authGateModal;
+        private NetworkGateModal _networkGateModal;
 
         private EnemyDefinition CurrentStage => _activeRunStages[_stageIndex];
 
@@ -88,11 +95,13 @@ namespace KnowledgeWarrior.Combat
             _baseSceneStages.Clear();
             _baseSceneStages.AddRange(stages);
             if (player.Renderer != null) _heroBaseSprite = player.Renderer.sprite;
+            _arenaBackgroundObject = GameObject.Find("Background");
 
             BattleAudioManager.EnsureInstance();
             ThemeManager.EnsureInstance();
 
             ui.Initialize(OnAnswerSelected, OnContinue, OnResultButton);
+            PortraitLayoutController.ApplyPortraitArenaAndHud(ui, player, enemy, _arenaBackgroundObject);
             player.OnHealthChanged += ui.SetPlayerHp;
             enemy.OnHealthChanged += ui.SetEnemyHp;
 
@@ -113,37 +122,23 @@ namespace KnowledgeWarrior.Combat
             {
                 LeaderboardModal.EnsureOnCanvas(canvas, RefreshPlayerInfo);
                 _biomeModal = BiomeSelectModal.EnsureOnCanvas(canvas, questionManager, OnSubjectBiomeChosen);
-                _subjectLobbyModal = SubjectLobbyModal.EnsureOnCanvas(canvas, StartSubjectMonsterExpedition, StartRealUserOneOnOneDuel);
+                _subjectLobbyModal = SubjectLobbyModal.EnsureOnCanvas(canvas, StartSubjectMonsterExpedition);
                 _authGateModal = AuthGateModal.EnsureOnCanvas(canvas, OnAuthenticatedSessionReady);
+                _networkGateModal = NetworkGateModal.EnsureOnCanvas(canvas, OnRetryOnlineConnection);
             }
 
             if (AuthManager.Instance != null)
             {
                 AuthManager.Instance.OnAuthStateChanged += HandleAuthStateChanged;
             }
-
-            if (questionManager.Count == 0)
+            if (syncManager != null)
             {
-                ui.ShowResult("NO QUESTIONS", "questions.json could not be loaded.\nCheck the Console for details.", "Retry", defeatColor);
-                return;
+                syncManager.OnOnlineAvailabilityChanged += HandleOnlineAvailabilityChanged;
             }
 
-            // Once logged in, the user stays authenticated on reopen and skips AuthGateModal automatically.
-            if (AuthManager.Instance != null && !AuthManager.Instance.IsAuthenticated && _authGateModal != null)
-            {
-                State = BattleState.Idle;
-                ui.HideQuestionPanel();
-                ui.HideResult();
-                _authGateModal.Show(AuthGateModal.AuthPage.Register);
-                return;
-            }
-
-            StartSubjectMonsterExpedition(biomeName, _selectedSubject);
-
-            if (showBiomeSelectOnStart && _biomeModal != null)
-            {
-                _biomeModal.Show(allowClose: true);
-            }
+            State = BattleState.Idle;
+            SetGameplayActive(false);
+            StartCoroutine(BootstrapOnlineSessionRoutine());
         }
 
         private void OnDestroy()
@@ -151,11 +146,125 @@ namespace KnowledgeWarrior.Combat
             if (player != null && ui != null) player.OnHealthChanged -= ui.SetPlayerHp;
             if (enemy != null && ui != null) enemy.OnHealthChanged -= ui.SetEnemyHp;
             if (AuthManager.Instance != null) AuthManager.Instance.OnAuthStateChanged -= HandleAuthStateChanged;
+            if (syncManager != null) syncManager.OnOnlineAvailabilityChanged -= HandleOnlineAvailabilityChanged;
+        }
+
+        private void HandleOnlineAvailabilityChanged(bool online, string reason)
+        {
+            if (online || _networkGateModal == null) return;
+            _networkGateModal.Show(reason, isConnecting: false);
+        }
+
+        private void OnRetryOnlineConnection()
+        {
+            StopAllCoroutines();
+            StartCoroutine(BootstrapOnlineSessionRoutine());
+        }
+
+        private IEnumerator BootstrapOnlineSessionRoutine()
+        {
+            if (_networkGateModal != null)
+            {
+                _networkGateModal.SetConnectingState("Verifying internet data and connecting to Knowledge Warrior server...");
+            }
+
+            bool onlineOk = false;
+            string onlineErr = null;
+            yield return syncManager.VerifyOnlineAndLoadQuestionsRoutine((ok, err) =>
+            {
+                onlineOk = ok;
+                onlineErr = err;
+            });
+
+            if (!onlineOk)
+            {
+                if (_networkGateModal != null)
+                {
+                    _networkGateModal.Show(onlineErr, isConnecting: false);
+                }
+                yield break;
+            }
+
+            if (AuthManager.Instance != null && AuthManager.Instance.IsAuthenticated)
+            {
+                bool netOk = false;
+                bool authOk = false;
+                string authErr = null;
+                yield return AuthManager.Instance.ValidateSessionAndLoadProgressRoutine((nOk, aOk, err) =>
+                {
+                    netOk = nOk;
+                    authOk = aOk;
+                    authErr = err;
+                });
+
+                if (!netOk)
+                {
+                    if (_networkGateModal != null)
+                    {
+                        _networkGateModal.Show(authErr, isConnecting: false);
+                    }
+                    yield break;
+                }
+
+                if (!authOk)
+                {
+                    if (_networkGateModal != null) _networkGateModal.Hide();
+                    _authGateModal?.Show(AuthGateModal.AuthPage.Login);
+                    yield break;
+                }
+            }
+            else
+            {
+                if (_networkGateModal != null) _networkGateModal.Hide();
+                _authGateModal?.Show(AuthGateModal.AuthPage.Register);
+                yield break;
+            }
+
+            if (_networkGateModal != null) _networkGateModal.Hide();
+
+            if (_uncommittedBattleResult != null)
+            {
+                yield return CommitBattleResultOnlineRoutine(_uncommittedBattleVictory);
+                yield break;
+            }
+
+            if (!_sessionBootstrapped)
+            {
+                _sessionBootstrapped = true;
+                StartSubjectMonsterExpedition(biomeName, _selectedSubject);
+                if (showBiomeSelectOnStart && _biomeModal != null)
+                {
+                    _biomeModal.Show(allowClose: true);
+                }
+            }
         }
 
         private void OnAuthenticatedSessionReady()
         {
             StopAllCoroutines();
+            StartCoroutine(PostLoginBootstrapRoutine());
+        }
+
+        private IEnumerator PostLoginBootstrapRoutine()
+        {
+            if (questionManager.Count == 0)
+            {
+                bool qOk = false;
+                string qErr = null;
+                yield return syncManager.VerifyOnlineAndLoadQuestionsRoutine((ok, err) =>
+                {
+                    qOk = ok;
+                    qErr = err;
+                });
+
+                if (!qOk)
+                {
+                    _networkGateModal?.Show(qErr, isConnecting: false);
+                    yield break;
+                }
+            }
+
+            _sessionBootstrapped = true;
             StartSubjectMonsterExpedition(biomeName, _selectedSubject);
             if (showBiomeSelectOnStart && _biomeModal != null)
             {
@@ -169,17 +278,32 @@ namespace KnowledgeWarrior.Combat
             if (AuthManager.Instance != null && !AuthManager.Instance.IsAuthenticated && _authGateModal != null)
             {
                 StopAllCoroutines();
+                _sessionBootstrapped = false;
+                _uncommittedBattleResult = null;
                 State = BattleState.Idle;
-                ui.HideQuestionPanel();
-                ui.HideResult();
+                SetGameplayActive(false);
                 if (_biomeModal != null) _biomeModal.Hide();
                 if (_subjectLobbyModal != null) _subjectLobbyModal.Hide();
                 _authGateModal.Show(AuthGateModal.AuthPage.Register);
             }
         }
 
+        private void SetGameplayActive(bool visible)
+        {
+            if (ui != null) ui.SetGameplayHudVisible(visible);
+            if (player != null) player.gameObject.SetActive(visible);
+            if (enemy != null) enemy.gameObject.SetActive(visible);
+            if (_arenaBackgroundObject != null) _arenaBackgroundObject.SetActive(visible);
+            if (!visible && Camera.main != null)
+            {
+                Camera.main.backgroundColor = StandaloneAuthScreenColor;
+            }
+        }
+
         private void OnSubjectBiomeChosen(string selectedBiomeTitle, string subjectFilter)
         {
+            if (!EnsureConnectedOrBlock()) return;
+
             biomeName = !string.IsNullOrWhiteSpace(selectedBiomeTitle) ? selectedBiomeTitle : "Citadel of Code";
             _selectedSubject = !string.IsNullOrWhiteSpace(subjectFilter) ? subjectFilter : "Programming";
 
@@ -195,52 +319,43 @@ namespace KnowledgeWarrior.Combat
 
         private void StartSubjectMonsterExpedition(string selectedBiomeTitle, string subjectFilter)
         {
+            if (!EnsureConnectedOrBlock()) return;
+
             StopAllCoroutines();
-            _isPvpMatch = false;
+            SetGameplayActive(true);
             biomeName = !string.IsNullOrWhiteSpace(selectedBiomeTitle) ? selectedBiomeTitle : "Citadel of Code";
             _selectedSubject = !string.IsNullOrWhiteSpace(subjectFilter) ? subjectFilter : "Programming";
 
             int subjectLevel = ProgressManager.GetSubjectLevel(_selectedSubject);
             _activeRunStages = MonsterCatalog.BuildStagesForSubjectAndLevel(_selectedSubject, subjectLevel, _baseSceneStages);
 
-            ApplySubjectThemeAndAudio(isBossOrPvp: false);
+            ApplySubjectThemeAndAudio(isBoss: false);
             ReviveAndSetupPlayer();
             StartStage(0);
         }
 
-        private void StartRealUserOneOnOneDuel(string selectedBiomeTitle, string subjectFilter, RealUserLobbyEntry opponent)
+        private bool EnsureConnectedOrBlock()
         {
-            StopAllCoroutines();
-            _isPvpMatch = true;
-            biomeName = !string.IsNullOrWhiteSpace(selectedBiomeTitle) ? selectedBiomeTitle : "Citadel of Code";
-            _selectedSubject = !string.IsNullOrWhiteSpace(subjectFilter) ? subjectFilter : "Programming";
-
-            int subjectLevel = ProgressManager.GetSubjectLevel(_selectedSubject);
-            var rivalDef = MonsterCatalog.BuildRealUserOpponent(
-                opponent.userId,
-                opponent.username,
-                _selectedSubject,
-                subjectLevel,
-                opponent.subjectXp,
-                _heroBaseSprite);
-
-            _activeRunStages = new List<EnemyDefinition> { rivalDef };
-
-            ApplySubjectThemeAndAudio(isBossOrPvp: true);
-            ReviveAndSetupPlayer();
-            StartStage(0);
+            if (syncManager != null && !syncManager.IsOnline)
+            {
+                syncManager.ReportConnectionLost("Internet data connection required. Reconnect to continue playing.");
+                return false;
+            }
+            return true;
         }
 
-        private void ApplySubjectThemeAndAudio(bool isBossOrPvp)
+        private void ApplySubjectThemeAndAudio(bool isBoss)
         {
             int subjectLevel = ProgressManager.GetSubjectLevel(_selectedSubject);
             var tier = SubjectTierSystem.GetTierForLevel(subjectLevel);
             ThemeManager.Instance?.ApplyTheme(_selectedSubject, subjectLevel);
-            BattleAudioManager.Instance?.PlaySubjectThemeMusic(_selectedSubject, tier, isBossOrPvp);
+            BattleAudioManager.Instance?.PlaySubjectThemeMusic(_selectedSubject, tier, isBoss);
         }
 
         private void StartStage(int index)
         {
+            if (!EnsureConnectedOrBlock()) return;
+
             if (_activeRunStages == null || _activeRunStages.Count == 0)
             {
                 int lv = ProgressManager.GetSubjectLevel(_selectedSubject);
@@ -249,29 +364,23 @@ namespace KnowledgeWarrior.Combat
 
             _stageIndex = Mathf.Clamp(index, 0, _activeRunStages.Count - 1);
             _runFinished = false;
+            _subjectPoolExhausted = false;
             _streak = 0;
             _battleCorrect = 0;
             _battleTotal = 0;
             _battleXp = 0;
+            _battleAnswerLogs.Clear();
             _turn = TurnType.Attack;
 
             var def = CurrentStage;
             int subjLv = ProgressManager.GetSubjectLevel(_selectedSubject);
             string badgeName = SubjectTierSystem.GetBadgeNameForLevel(subjLv);
 
-            ApplySubjectThemeAndAudio(isBossOrPvp: def.isBoss || def.isRealUserOpponent);
+            ApplySubjectThemeAndAudio(isBoss: def.isBoss);
 
             enemy.Setup(def.displayName, def.maxHp, def.attack, def.sprite, def.tint, def.worldHeight, def.attackGesture);
-            ui.SetEnemyName(def.displayName, def.isBoss || def.isRealUserOpponent);
-
-            if (def.isRealUserOpponent)
-            {
-                ui.SetStage($"{_selectedSubject} 1v1 DUEL  •  LV {subjLv} {badgeName.ToUpperInvariant()} BADGE");
-            }
-            else
-            {
-                ui.SetStage($"{biomeName} ({badgeName} Lv {subjLv})  •  Stage {_stageIndex + 1}/{_activeRunStages.Count}");
-            }
+            ui.SetEnemyName(def.displayName, def.isBoss);
+            ui.SetStage($"{biomeName} ({badgeName} Lv {subjLv})  •  Stage {_stageIndex + 1}/{_activeRunStages.Count}");
 
             ui.SetStreak(0);
             ui.HideResult();
@@ -282,13 +391,7 @@ namespace KnowledgeWarrior.Combat
         {
             State = BattleState.Intro;
             ui.HideQuestionPanel();
-            if (def.isRealUserOpponent)
-            {
-                BattleAudioManager.Instance?.PlayBossEntranceRoar();
-                cameraShake?.Shake(0.35f, 0.12f);
-                yield return ui.ShowBanner("1v1 REAL USER FIGHT", $"{def.displayName} • 20% Point Stake!", bossColor);
-            }
-            else if (def.isBoss)
+            if (def.isBoss)
             {
                 BattleAudioManager.Instance?.PlayBossEntranceRoar();
                 cameraShake?.Shake(0.5f, 0.15f);
@@ -296,24 +399,46 @@ namespace KnowledgeWarrior.Combat
             }
             else
             {
-                yield return ui.ShowBanner("A wild foe appears!", def.displayName, victoryColor);
+                yield return ui.ShowBanner("A wild monster appears!", def.displayName, victoryColor);
             }
             NextTurn();
         }
 
         private void NextTurn()
         {
+            if (!EnsureConnectedOrBlock()) return;
+
             var def = CurrentStage;
             string effectiveSubject = !string.IsNullOrWhiteSpace(_selectedSubject) ? _selectedSubject : def.subject;
             int subjectLevel = ProgressManager.GetSubjectLevel(effectiveSubject);
 
-            // Strictly align question difficulty with the player's current Subject Level & Badge Tier (1-15, 16-30, 31-60, 61-100)
             _currentQuestion = questionManager.GetQuestionForSubjectAndLevel(effectiveSubject, subjectLevel);
             if (_currentQuestion == null)
             {
-                ui.ShowResult("NO QUESTIONS", "The question bank is empty.", "Retry", defeatColor);
-                State = BattleState.BattleOver;
+                StartCoroutine(ReplenishAndRetryTurnRoutine(effectiveSubject, subjectLevel));
                 return;
+            }
+
+            PresentCurrentQuestion(effectiveSubject, subjectLevel);
+        }
+
+        private void PresentCurrentQuestion(string effectiveSubject, int subjectLevel)
+        {
+            syncManager?.NotifyQuestionSeenOnline(
+                _currentQuestion.id,
+                effectiveSubject,
+                _currentQuestion.difficulty);
+
+            if (!_backgroundQuestionRefreshInFlight &&
+                questionManager.CountUnseenForSubjectAndLevel(effectiveSubject, subjectLevel) <= 4 &&
+                syncManager != null)
+            {
+                _backgroundQuestionRefreshInFlight = true;
+                int tierDiff = SubjectTierSystem.GetAlignedQuestionDifficulty(subjectLevel);
+                StartCoroutine(syncManager.ReplenishAndReloadSubjectQuestionsRoutine(
+                    effectiveSubject,
+                    tierDiff,
+                    (_, _) => _backgroundQuestionRefreshInFlight = false));
             }
 
             ui.SetTurn(_turn);
@@ -321,9 +446,58 @@ namespace KnowledgeWarrior.Combat
             State = BattleState.AwaitingAnswer;
         }
 
+        private IEnumerator ReplenishAndRetryTurnRoutine(string effectiveSubject, int subjectLevel)
+        {
+            State = BattleState.Intro;
+            ui.HideQuestionPanel();
+
+            int tierDifficulty = SubjectTierSystem.GetAlignedQuestionDifficulty(subjectLevel);
+            bool onlineOk = true;
+            string onlineErr = null;
+
+            if (syncManager != null)
+            {
+                yield return syncManager.ReplenishAndReloadSubjectQuestionsRoutine(
+                    effectiveSubject,
+                    tierDifficulty,
+                    (ok, err) =>
+                    {
+                        onlineOk = ok;
+                        onlineErr = err;
+                    });
+            }
+
+            if (!onlineOk)
+            {
+                _networkGateModal?.Show(onlineErr ?? "Lost connection while loading new subject questions.", isConnecting: false);
+                State = BattleState.Idle;
+                yield break;
+            }
+
+            _currentQuestion = questionManager.GetQuestionForSubjectAndLevel(effectiveSubject, subjectLevel);
+            if (_currentQuestion != null)
+            {
+                PresentCurrentQuestion(effectiveSubject, subjectLevel);
+                yield break;
+            }
+
+            _subjectPoolExhausted = true;
+            State = BattleState.BattleOver;
+            string tierName = SubjectTierSystem.GetBadgeNameForLevel(subjectLevel);
+            ui.ShowResult(
+                "SUBJECT POOL COMPLETED",
+                $"You have answered every available unique {tierName} Tier question for {effectiveSubject}.\n" +
+                "Questions never repeat once shown, and each subject uses only its own curriculum pool.\n" +
+                "Return to the Subject Lobby or try another subject category while new questions are added.",
+                "Open Subject Lobby",
+                victoryColor);
+        }
+
         private void OnAnswerSelected(int index)
         {
             if (State != BattleState.AwaitingAnswer) return;
+            if (!EnsureConnectedOrBlock()) return;
+
             BattleAudioManager.Instance?.PlayButtonClick();
             State = BattleState.Resolving;
             StartCoroutine(ResolveRoutine(index));
@@ -334,6 +508,12 @@ namespace KnowledgeWarrior.Combat
             var q = _currentQuestion;
             bool correct = selectedIndex == q.correctIndex;
             _battleTotal++;
+            _battleAnswerLogs.Add(new BattleAnswerLogDto
+            {
+                questionId = q.id,
+                wasCorrect = correct,
+                responseTimeMs = 0
+            });
 
             ui.RevealAnswer(selectedIndex, q.correctIndex);
 
@@ -384,7 +564,7 @@ namespace KnowledgeWarrior.Combat
             {
                 var def = CurrentStage;
                 int damage = Mathf.Max(1, Mathf.RoundToInt(enemy.Attack * Random.Range(0.9f, 1.1f)));
-                BattleAudioManager.Instance?.PlayMonsterAttack(def.isBoss || def.isRealUserOpponent);
+                BattleAudioManager.Instance?.PlayMonsterAttack(def.isBoss);
                 yield return enemy.AttackRoutine(player, () =>
                 {
                     if (correct)
@@ -414,61 +594,97 @@ namespace KnowledgeWarrior.Combat
         private void OnContinue()
         {
             if (State != BattleState.AwaitingContinue) return;
+            if (!EnsureConnectedOrBlock()) return;
+
             BattleAudioManager.Instance?.PlayButtonClick();
 
-            if (enemy.IsDead) { EndBattle(true); return; }
-            if (player.IsDead) { EndBattle(false); return; }
+            if (enemy.IsDead)
+            {
+                StartCoroutine(CommitBattleResultOnlineRoutine(true));
+                return;
+            }
+            if (player.IsDead)
+            {
+                StartCoroutine(CommitBattleResultOnlineRoutine(false));
+                return;
+            }
 
             _turn = _turn == TurnType.Attack ? TurnType.Defend : TurnType.Attack;
             NextTurn();
         }
 
-        private void EndBattle(bool victory)
+        private IEnumerator CommitBattleResultOnlineRoutine(bool victory)
         {
-            State = BattleState.BattleOver;
+            State = BattleState.Resolving;
             ui.HideQuestionPanel();
 
-            if (victory) BattleAudioManager.Instance?.PlayVictoryFanfare();
-            else BattleAudioManager.Instance?.PlayDefeatStinger();
-
-            var def = CurrentStage;
-            int accuracy = _battleTotal > 0 ? Mathf.RoundToInt(100f * _battleCorrect / _battleTotal) : 0;
-
-            if (_isPvpMatch || def.isRealUserOpponent)
+            var def = _uncommittedStageDef ?? CurrentStage;
+            if (_uncommittedBattleResult == null)
             {
-                HandlePvpBattleOutcome(def, victory, accuracy);
-                return;
+                int xp = _battleXp + (victory ? def.xpReward : 0);
+                _uncommittedStageDef = def;
+                _uncommittedBattleVictory = victory;
+                _uncommittedBattleResult = new BattleResultSubmission
+                {
+                    subject = _selectedSubject,
+                    xpGained = xp,
+                    victory = victory,
+                    correctAnswers = _battleCorrect,
+                    totalAnswers = _battleTotal,
+                    answerLogs = _battleAnswerLogs.ToArray()
+                };
             }
 
-            int xp = _battleXp + (victory ? def.xpReward : 0);
-            int levelsGained = ProgressManager.AddXp(xp, _selectedSubject);
-            AuthManager.Instance?.SyncSubjectProgressToServer(_selectedSubject);
+            bool syncedOk = false;
+            string syncError = null;
+            int levelsGained = 0;
 
-            ProgressManager.RecordBattle(new PendingScore
+            yield return syncManager.SubmitBattleResultOnlineRoutine(_uncommittedBattleResult, (ok, err, gained) =>
             {
-                subject = _selectedSubject,
-                xpGained = xp,
-                stageIndex = _stageIndex,
-                enemyName = def.displayName,
-                victory = victory,
-                isPvpDuel = false,
-                correctAnswers = _battleCorrect,
-                totalAnswers = _battleTotal,
+                syncedOk = ok;
+                syncError = err;
+                levelsGained = gained;
             });
+
+            if (!syncedOk)
+            {
+                _networkGateModal?.Show(syncError ?? "Connection lost while saving battle progress to server.", isConnecting: false);
+                yield break;
+            }
+
+            int awardedXp = _uncommittedBattleResult.xpGained;
+            _uncommittedBattleResult = null;
+            _uncommittedStageDef = null;
+
+            if (victory)
+            {
+                ProgressManager.RecordStageClearedInSession(_stageIndex);
+                BattleAudioManager.Instance?.PlayVictoryFanfare();
+            }
+            else
+            {
+                BattleAudioManager.Instance?.PlayDefeatStinger();
+            }
+
+            State = BattleState.BattleOver;
 
             var sp = ProgressManager.GetSubjectProgress(_selectedSubject);
             if (levelsGained > 0)
             {
+                _activeRunStages = MonsterCatalog.BuildStagesForSubjectAndLevel(_selectedSubject, sp.level, _baseSceneStages);
                 player.UpdateStats(ProgressManager.MaxHpForLevel(sp.level), ProgressManager.AttackForLevel(sp.level), fullHeal: true);
             }
             RefreshPlayerInfo();
 
+            int accuracy = _battleTotal > 0 ? Mathf.RoundToInt(100f * _battleCorrect / _battleTotal) : 0;
             string badgeName = SubjectTierSystem.GetBadgeNameForLevel(sp.level);
-            string body = $"+{xp} {_selectedSubject} XP  •  Accuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%)\n" +
-                          $"Subject Standing: LV {sp.level}/100 ({badgeName} Badge • {sp.points} PTS)";
+            int nextXp = SubjectTierSystem.XpToNextSubjectLevel(sp.level);
+
+            string body = $"+{awardedXp} {_selectedSubject} XP  •  Accuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%)\n" +
+                          $"Online Subject Standing: LV {sp.level}/100 ({badgeName} Badge • {sp.xp}/{nextXp} XP)";
             if (levelsGained > 0)
             {
-                body += $"\n<color=#FFD24D>SUBJECT LEVEL UP! You are now LV {sp.level} ({badgeName} Badge) in {_selectedSubject}!</color>";
+                body += $"\n<color=#FFD24D>SUBJECT LEVEL UP! Advanced sequentially to LV {sp.level} ({badgeName} Badge) in {_selectedSubject}!</color>";
             }
 
             if (victory)
@@ -486,117 +702,15 @@ namespace KnowledgeWarrior.Combat
             }
         }
 
-        private void HandlePvpBattleOutcome(EnemyDefinition def, bool victory, int accuracy)
-        {
-            var spBefore = ProgressManager.GetSubjectProgress(_selectedSubject);
-            int playerPointsBefore = spBefore.points;
-            int opponentPointsBefore = Mathf.Max(100, def.opponentSubjectPoints);
-            int rewardPoints = _battleXp + def.xpReward;
-
-            int playerDeduction = 0;
-            int opponentDeduction = 0;
-
-            if (victory)
-            {
-                opponentDeduction = SubjectTierSystem.CalculateTwentyPercentDeduction(opponentPointsBefore);
-                ProgressManager.RecordPvpWin(_selectedSubject, rewardPoints);
-            }
-            else
-            {
-                playerDeduction = ProgressManager.ApplyPvpTwentyPercentDeduction(_selectedSubject);
-            }
-
-            StartCoroutine(PostPvpResolutionToServerRoutine(def, victory, playerPointsBefore, rewardPoints));
-
-            ProgressManager.RecordBattle(new PendingScore
-            {
-                subject = _selectedSubject,
-                xpGained = victory ? rewardPoints : -playerDeduction,
-                stageIndex = 0,
-                enemyName = def.displayName,
-                victory = victory,
-                isPvpDuel = true,
-                correctAnswers = _battleCorrect,
-                totalAnswers = _battleTotal,
-            });
-
-            RefreshPlayerInfo();
-            var spAfter = ProgressManager.GetSubjectProgress(_selectedSubject);
-            string badgeName = SubjectTierSystem.GetBadgeNameForLevel(spAfter.level);
-
-            if (victory)
-            {
-                _runFinished = true;
-                int oppAfter = Mathf.Max(0, opponentPointsBefore - opponentDeduction);
-                string msg =
-                    $"You defeated real user {def.displayName} in a 1v1 {_selectedSubject} Duel!\n" +
-                    $"• Your Reward: <color=#3EE6A0>+{rewardPoints} PTS</color> (Now {spAfter.points} PTS • LV {spAfter.level} {badgeName})\n" +
-                    $"• Opponent 20% Penalty: <color=#FF5C7A>-{opponentDeduction} PTS</color> ({opponentPointsBefore} -> {oppAfter} PTS)\n" +
-                    $"• Accuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%)";
-                ui.ShowResult("1v1 DUEL VICTORY!", msg, "Return to Subject Lobby", victoryColor);
-            }
-            else
-            {
-                _runFinished = true;
-                string msg =
-                    $"You lost the 1v1 {_selectedSubject} Duel against {def.displayName}.\n" +
-                    $"• Your 20% Point Deduction: <color=#FF5C7A>-{playerDeduction} PTS</color> ({playerPointsBefore} -> {spAfter.points} PTS)\n" +
-                    $"• Subject Standing: LV {spAfter.level} ({badgeName} Badge)\n" +
-                    $"• Accuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%)";
-                ui.ShowResult("1v1 DUEL DEFEAT (-20% PTS)", msg, "Return to Subject Lobby", defeatColor);
-            }
-        }
-
-        private IEnumerator PostPvpResolutionToServerRoutine(
-            EnemyDefinition def,
-            bool victory,
-            int playerCurrentPoints,
-            int rewardPoints)
-        {
-            string baseUrl = SyncManager.Instance != null
-                ? SyncManager.Instance.EffectiveApiBaseUrl
-                : PlayerPrefs.GetString(SyncManager.ApiUrlPrefKey, "http://localhost:5000/api/v1").TrimEnd('/');
-
-            var payload = new PvpResolveRequestDto
-            {
-                subject = _selectedSubject,
-                subjectLevel = ProgressManager.GetSubjectLevel(_selectedSubject),
-                opponentUserId = def.opponentUserId,
-                opponentUsername = def.displayName,
-                challengerUsername = ProgressManager.Current.playerName,
-                victory = victory,
-                playerCurrentPoints = playerCurrentPoints,
-                rewardPoints = rewardPoints
-            };
-
-            using var req = new UnityWebRequest($"{baseUrl}/pvp/resolve", UnityWebRequest.kHttpVerbPOST);
-            byte[] bodyBytes = Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload));
-            req.uploadHandler = new UploadHandlerRaw(bodyBytes);
-            req.downloadHandler = new DownloadHandlerBuffer();
-            req.timeout = 8;
-            req.SetRequestHeader("Content-Type", "application/json");
-            if (AuthManager.Instance != null && AuthManager.Instance.IsAuthenticated)
-            {
-                req.SetRequestHeader("Authorization", $"Bearer {AuthManager.Instance.Token}");
-            }
-
-            yield return req.SendWebRequest();
-        }
-
         private void OnResultButton()
         {
             BattleAudioManager.Instance?.PlayButtonClick();
-            if (questionManager.Count == 0)
-            {
-                questionManager.Load();
-                if (questionManager.Count > 0) StartSubjectMonsterExpedition(biomeName, _selectedSubject);
-                return;
-            }
-
+            if (!EnsureConnectedOrBlock()) return;
             if (State != BattleState.BattleOver) return;
 
-            if (_isPvpMatch || _runFinished)
+            if (_runFinished || _subjectPoolExhausted)
             {
+                _subjectPoolExhausted = false;
                 ui.HideResult();
                 if (_subjectLobbyModal != null)
                 {
@@ -638,7 +752,7 @@ namespace KnowledgeWarrior.Combat
                 ProgressManager.AttackForLevel(subjLv),
                 _heroBaseSprite,
                 Color.white,
-                3.1f,
+                2.35f,
                 gesture);
             RefreshPlayerInfo();
         }
@@ -653,19 +767,6 @@ namespace KnowledgeWarrior.Combat
                 sp.xp,
                 SubjectTierSystem.XpToNextSubjectLevel(sp.level),
                 _selectedSubject);
-        }
-
-        [Serializable]
-        private class PvpResolveRequestDto
-        {
-            public string subject;
-            public int subjectLevel;
-            public string opponentUserId;
-            public string opponentUsername;
-            public string challengerUsername;
-            public bool victory;
-            public int playerCurrentPoints;
-            public int rewardPoints;
         }
     }
 }

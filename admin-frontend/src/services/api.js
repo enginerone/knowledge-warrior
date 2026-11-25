@@ -1,4 +1,7 @@
-const API_BASE = '/api/v1';
+const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+export const API_BASE = configuredBaseUrl
+  ? (configuredBaseUrl.endsWith('/api/v1') ? configuredBaseUrl : `${configuredBaseUrl}/api/v1`)
+  : '/api/v1';
 
 function getAuthHeaders(isMultipart = false) {
   const token = localStorage.getItem('kw_admin_token');

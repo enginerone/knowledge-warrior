@@ -72,8 +72,7 @@ namespace KnowledgeWarrior.Visuals
                 var fitter = _backgroundRenderer.GetComponent<BackgroundFitter>();
                 if (fitter != null)
                 {
-                    fitter.enabled = false;
-                    fitter.enabled = true;
+                    fitter.ConfigureGround(0.42f, 1.05f);
                 }
             }
         }
@@ -185,9 +184,9 @@ namespace KnowledgeWarrior.Visuals
                 return cached;
             }
 
-            const int width = 512;
-            const int height = 288;
-            int groundY = Mathf.RoundToInt(height * 0.28f);
+            const int width = 360;
+            const int height = 640;
+            int groundY = Mathf.RoundToInt(height * 0.42f);
 
             var tex = new Texture2D(width, height, TextureFormat.RGBA32, false)
             {
@@ -200,8 +199,8 @@ namespace KnowledgeWarrior.Visuals
             int tierIndex = (int)theme.tier;
 
             // 1. Sky gradient + Tier-specific celestial emblem (Moon / Twin Rings / Arcane Portal / Astral Eclipse)
-            Vector2 emblemCenter = new(width * 0.5f, height * (0.64f + 0.03f * tierIndex));
-            float emblemRadius = 26f + tierIndex * 11f;
+            Vector2 emblemCenter = new(width * 0.5f, height * (0.76f + 0.02f * tierIndex));
+            float emblemRadius = 24f + tierIndex * 9f;
 
             for (int y = groundY; y < height; y++)
             {

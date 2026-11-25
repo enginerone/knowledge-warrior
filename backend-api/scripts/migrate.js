@@ -84,6 +84,8 @@ async function runMigrations() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_hash VARCHAR(255);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS battles_won INT DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS battles_lost INT DEFAULT 0;
       CREATE INDEX IF NOT EXISTS idx_users_xp ON users(total_xp DESC);
     `);
 
@@ -97,6 +99,14 @@ async function runMigrations() {
         answered_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_progress_logs_user ON progress_logs(user_id);
+
+      CREATE TABLE IF NOT EXISTS user_seen_questions (
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+        seen_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (user_id, question_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_seen_questions_user ON user_seen_questions(user_id);
     `);
 
     await client.query(`
@@ -105,30 +115,18 @@ async function runMigrations() {
         user_id UUID REFERENCES users(id) ON DELETE CASCADE,
         subject VARCHAR(100) NOT NULL,
         subject_level INT DEFAULT 1 CHECK (subject_level BETWEEN 1 AND 100),
-        subject_xp INT DEFAULT 100,
+        subject_xp INT DEFAULT 0,
+        subject_points INT DEFAULT 0,
         badge_tier VARCHAR(30) DEFAULT 'Beginner',
-        pvp_wins INT DEFAULT 0,
-        pvp_losses INT DEFAULT 0,
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE (user_id, subject)
       );
+      ALTER TABLE user_subject_progress ALTER COLUMN subject_xp SET DEFAULT 0;
+      ALTER TABLE user_subject_progress ADD COLUMN IF NOT EXISTS subject_points INT DEFAULT 0;
+      ALTER TABLE user_subject_progress DROP COLUMN IF EXISTS pvp_wins;
+      ALTER TABLE user_subject_progress DROP COLUMN IF EXISTS pvp_losses;
+      DROP TABLE IF EXISTS pvp_matches CASCADE;
       CREATE INDEX IF NOT EXISTS idx_user_subject_level ON user_subject_progress(LOWER(subject), subject_level);
-    `);
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS pvp_matches (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        challenger_id UUID REFERENCES users(id) ON DELETE CASCADE,
-        opponent_id UUID REFERENCES users(id) ON DELETE CASCADE,
-        subject VARCHAR(100) NOT NULL,
-        subject_level INT NOT NULL,
-        winner_id UUID REFERENCES users(id) ON DELETE SET NULL,
-        loser_id UUID REFERENCES users(id) ON DELETE SET NULL,
-        winner_xp_gained INT DEFAULT 0,
-        loser_points_deducted INT DEFAULT 0,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_pvp_matches_subject ON pvp_matches(LOWER(subject), subject_level);
     `);
 
     await client.query('COMMIT');

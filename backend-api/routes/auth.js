@@ -5,23 +5,19 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { authenticateToken, JWT_SECRET } = require('../middleware/auth');
 const { sendPasswordResetOtpEmail } = require('../services/emailService');
+const { DEFAULT_SUBJECTS } = require('../services/progressionService');
 
 const router = express.Router();
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-function calculateLevel(totalXp) {
-  if (!totalXp || totalXp <= 0) return 1;
-  return Math.floor(Math.pow(totalXp / 100, 1 / 1.6)) + 1;
-}
-
 // POST /api/v1/auth/register
 router.post('/register', async (req, res, next) => {
+  const client = await db.pool.connect();
   try {
     const rawUsername = (req.body.username || '').trim();
     const rawEmail = (req.body.email || '').trim().toLowerCase();
     const password = req.body.password || '';
-    const { clientHash, totalXp } = req.body;
 
     if (!rawUsername || !rawEmail || !password) {
       return res.status(400).json({ error: 'Username, valid email address, and password are required.' });
@@ -39,59 +35,47 @@ router.post('/register', async (req, res, next) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
     }
 
+    await client.query('BEGIN');
+
     // 1. Check if username is already taken (case-insensitive)
-    const existingUsername = await db.query(
+    const existingUsername = await client.query(
       'SELECT id FROM users WHERE LOWER(username) = LOWER($1)',
       [rawUsername]
     );
     if (existingUsername.rows.length > 0) {
+      await client.query('ROLLBACK');
       return res.status(409).json({ error: `Username "${rawUsername}" is already taken. Please choose a unique username.` });
     }
 
     // 2. Check if email is already registered (case-insensitive)
-    const existingEmail = await db.query(
+    const existingEmail = await client.query(
       'SELECT id FROM users WHERE LOWER(email) = LOWER($1)',
       [rawEmail]
     );
     if (existingEmail.rows.length > 0) {
+      await client.query('ROLLBACK');
       return res.status(409).json({ error: 'An account with this email address is already registered.' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const initialXp = Math.max(0, parseInt(totalXp, 10) || 0);
-    let user = null;
+    const result = await client.query(
+      `INSERT INTO users (username, email, password_hash, role, total_xp, current_level, battles_won, battles_lost)
+       VALUES ($1, $2, $3, 'player', 0, 1, 0, 0)
+       RETURNING id, username, email, role, total_xp, current_level, created_at`,
+      [rawUsername, rawEmail, passwordHash]
+    );
+    const user = result.rows[0];
 
-    // If a guest device clientHash is provided, upgrade the guest row in-place to preserve logs & XP
-    if (clientHash && typeof clientHash === 'string') {
-      const guestName = `guest_${clientHash.slice(0, 10)}`;
-      const guestRes = await db.query(
-        'SELECT id, total_xp FROM users WHERE username = $1 AND password_hash IS NULL',
-        [guestName]
+    for (const subject of DEFAULT_SUBJECTS) {
+      await client.query(
+        `INSERT INTO user_subject_progress (user_id, subject, subject_level, subject_xp, subject_points, badge_tier, updated_at)
+         VALUES ($1, $2, 1, 0, 0, 'Beginner', NOW())
+         ON CONFLICT (user_id, subject) DO NOTHING`,
+        [user.id, subject]
       );
-      if (guestRes.rows.length > 0) {
-        const mergedXp = Math.max(guestRes.rows[0].total_xp || 0, initialXp);
-        const mergedLevel = calculateLevel(mergedXp);
-        const updateRes = await db.query(
-          `UPDATE users
-           SET username = $1, email = $2, password_hash = $3, total_xp = $4, current_level = $5, last_synced_at = NOW()
-           WHERE id = $6
-           RETURNING id, username, email, role, total_xp, current_level, created_at`,
-          [rawUsername, rawEmail, passwordHash, mergedXp, mergedLevel, guestRes.rows[0].id]
-        );
-        user = updateRes.rows[0];
-      }
     }
 
-    if (!user) {
-      const initialLevel = calculateLevel(initialXp);
-      const result = await db.query(
-        `INSERT INTO users (username, email, password_hash, role, total_xp, current_level)
-         VALUES ($1, $2, $3, 'player', $4, $5)
-         RETURNING id, username, email, role, total_xp, current_level, created_at`,
-        [rawUsername, rawEmail, passwordHash, initialXp, initialLevel]
-      );
-      user = result.rows[0];
-    }
+    await client.query('COMMIT');
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
@@ -107,13 +91,16 @@ router.post('/register', async (req, res, next) => {
         username: user.username,
         email: user.email,
         role: user.role,
-        totalXp: user.total_xp,
-        currentLevel: user.current_level,
+        totalXp: 0,
+        currentLevel: 1,
         createdAt: user.created_at,
       },
     });
   } catch (err) {
+    await client.query('ROLLBACK');
     next(err);
+  } finally {
+    client.release();
   }
 });
 
@@ -165,8 +152,10 @@ router.post('/login', async (req, res, next) => {
         username: user.username,
         email: user.email,
         role: user.role,
-        totalXp: user.total_xp,
-        currentLevel: user.current_level,
+        totalXp: Math.max(0, user.total_xp || 0),
+        currentLevel: Math.max(1, user.current_level || 1),
+        battlesWon: user.battles_won || 0,
+        battlesLost: user.battles_lost || 0,
       },
     });
   } catch (err) {
@@ -323,7 +312,19 @@ router.post('/reset-password', async (req, res, next) => {
 router.get('/me', authenticateToken, async (req, res, next) => {
   try {
     const result = await db.query(
-      'SELECT id, username, email, role, total_xp, current_level, COALESCE(is_banned, false) AS is_banned, created_at, last_synced_at FROM users WHERE id = $1',
+      `SELECT id,
+              username,
+              email,
+              role,
+              GREATEST(0, COALESCE(total_xp, 0))::int AS "totalXp",
+              GREATEST(1, COALESCE(current_level, 1))::int AS "currentLevel",
+              COALESCE(battles_won, 0)::int AS "battlesWon",
+              COALESCE(battles_lost, 0)::int AS "battlesLost",
+              COALESCE(is_banned, false) AS is_banned,
+              created_at,
+              last_synced_at
+       FROM users
+       WHERE id = $1`,
       [req.user.id]
     );
 

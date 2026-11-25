@@ -5,7 +5,7 @@ using UnityEngine;
 namespace KnowledgeWarrior.Combat
 {
     /// <summary>
-    /// A fighter on the battlefield (Hero, Monster, Boss, or 1v1 Real-User Challenger).
+    /// A fighter on the battlefield (Hero, Monster, or Boss).
     /// Performs code-driven action postures, attack gestures, slash/projectile visual effects,
     /// shield blocks, hit recoils, and death animations.
     /// </summary>
@@ -15,9 +15,9 @@ namespace KnowledgeWarrior.Combat
         [SerializeField] private SpriteRenderer spriteRenderer;
 
         [Header("Feel")]
-        [SerializeField] private float idleBobAmplitude = 0.09f;
+        [SerializeField] private float idleBobAmplitude = 0.07f;
         [SerializeField] private float idleBobSpeed = 2.4f;
-        [SerializeField] private float lungeDistance = 2.3f;
+        [SerializeField] private float lungeDistance = 1.65f;
         [SerializeField] private Color hitFlashColor = new(1f, 0.35f, 0.35f, 1f);
         [SerializeField] private Color blockFlashColor = new(0.4f, 0.85f, 1f, 1f);
 
@@ -55,6 +55,13 @@ namespace KnowledgeWarrior.Combat
             _homePosition = transform.position;
             _bobTime = UnityEngine.Random.value * 10f;
             EnsureGestureFxRenderer();
+        }
+
+        public void SetArenaPlacement(Vector3 homePosition, float arenaLungeDistance)
+        {
+            _homePosition = homePosition;
+            lungeDistance = arenaLungeDistance;
+            transform.position = homePosition;
         }
 
         public void Setup(
@@ -141,7 +148,7 @@ namespace KnowledgeWarrior.Combat
             float dir = target != null ? Mathf.Sign(target.transform.position.x - start.x) : 1f;
             Vector3 targetPos = target != null ? target.transform.position : start + Vector3.right * (dir * 3.5f);
 
-            Vector3 windup = start + new Vector3(-dir * 0.45f, 0.08f, 0f);
+            Vector3 windup = start + new Vector3(-dir * 0.28f, 0.06f, 0f);
             Vector3 strike = start + new Vector3(dir * lungeDistance, 0f, 0f);
 
             // 1. Wind-up gesture (lean back and gather energy)
@@ -295,7 +302,6 @@ namespace KnowledgeWarrior.Combat
                 AttackGestureType.HeroArcaneBurst => new Color(1.00f, 0.84f, 0.30f, 0.95f),
                 AttackGestureType.BossInfernoBreath => new Color(1.00f, 0.38f, 0.24f, 0.95f),
                 AttackGestureType.MonsterVenomBolt => new Color(0.68f, 0.42f, 1.00f, 0.95f),
-                AttackGestureType.RivalWarriorStrike => new Color(1.00f, 0.36f, 0.68f, 0.95f),
                 _ => new Color(1.00f, 0.58f, 0.32f, 0.95f)
             };
 

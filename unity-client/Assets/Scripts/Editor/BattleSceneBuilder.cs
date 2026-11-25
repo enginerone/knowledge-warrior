@@ -18,13 +18,12 @@ namespace KnowledgeWarrior.EditorTools
     /// <summary>
     /// Menu: Knowledge Warrior > Build Battle Scene
     /// Generates Assets/Scenes/Battle.unity with camera, background, fighters, managers and the
-    /// complete landscape battle UI, with every reference already wired. Safe to re-run
+    /// complete portrait battle UI, with every reference already wired. Safe to re-run
     /// (it overwrites the generated scene, so put custom work in prefabs/other scenes or stop re-running it).
     /// </summary>
     public static class BattleSceneBuilder
     {
         private const string ScenePath = "Assets/Scenes/Battle.unity";
-        private const string QuestionsPath = "Assets/Data/questions.json";
         private const string BackgroundPath = "Assets/Art/Backgrounds/BG_BinaryWoods.jpg";
         private const string HeroPath = "Assets/Art/Sprites/Hero_KnowledgeWarrior.png";
         private const string SlimePath = "Assets/Art/Sprites/Enemy_SyntaxSlime.png";
@@ -34,7 +33,9 @@ namespace KnowledgeWarrior.EditorTools
         private const string RoundedPath = "Assets/Art/UI/UI_RoundedRect.png";
         private const string UnlitMaterialPath = "Packages/com.unity.render-pipelines.universal/Runtime/Materials/Sprite-Unlit-Default.mat";
 
-        private const float FeetY = -0.95f;
+        private const float FeetY = 1.05f;
+        private const float HeroX = -1.45f;
+        private const float EnemyX = 1.45f;
 
         // Palette
         private static readonly Color Navy = Hex("0B1026");
@@ -61,27 +62,20 @@ namespace KnowledgeWarrior.EditorTools
             if (!EnsureTmpEssentials()) return;
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
 
-            ApplyMobileLandscapeSettings(false);
+            ApplyMobilePortraitSettings(false);
             ConfigureArtImporters();
 
             _rounded = AssetDatabase.LoadAssetAtPath<Sprite>(RoundedPath);
-            var questions = AssetDatabase.LoadAssetAtPath<TextAsset>(QuestionsPath);
-            if (questions == null)
-            {
-                EditorUtility.DisplayDialog("Knowledge Warrior", $"Could not find {QuestionsPath}.", "OK");
-                return;
-            }
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             var cam = BuildCamera();
             BuildBackground(cam);
-            var player = BuildFighter("Player", new Vector3(-4.6f, FeetY, 0f), Load(HeroPath), 3.1f, 1.0f);
-            var enemy = BuildFighter("Enemy", new Vector3(4.6f, FeetY, 0f), Load(SlimePath), 2.4f, 1.1f);
+            var player = BuildFighter("Player", new Vector3(HeroX, FeetY, 0f), Load(HeroPath), 2.35f, 0.85f);
+            var enemy = BuildFighter("Enemy", new Vector3(EnemyX, FeetY, 0f), Load(SlimePath), 1.85f, 0.90f);
 
             var qmGo = new GameObject("QuestionManager");
             var qm = qmGo.AddComponent<QuestionManager>();
-            SetRef(qm, "bundledQuestions", questions);
 
             var smGo = new GameObject("SyncManager");
             var sm = smGo.AddComponent<SyncManager>();
@@ -111,19 +105,20 @@ namespace KnowledgeWarrior.EditorTools
 
             EditorUtility.DisplayDialog("Knowledge Warrior",
                 "Battle scene generated at " + ScenePath + ".\n\n" +
-                "Tip: set the Game view to 1920x1080 (landscape) and press Play.\n" +
-                "Keyboard: 1-4 / A-D to answer, Space to continue.", "Let's fight!");
+                "Tip: set the Game view to 1080x1920 (portrait) and press Play.\n" +
+                "Keyboard: 1-4 / A-D to answer, Space to continue.", "Start Game");
         }
 
-        [MenuItem("Knowledge Warrior/Apply Mobile Landscape Settings", priority = 20)]
-        public static void ApplyMobileLandscapeSettingsMenu() => ApplyMobileLandscapeSettings(true);
+        [MenuItem("Knowledge Warrior/Apply Mobile Portrait Settings", priority = 20)]
+        public static void ApplyMobilePortraitSettingsMenu() => ApplyMobilePortraitSettings(true);
 
-        [MenuItem("Knowledge Warrior/Reset Local Progress", priority = 40)]
+        [MenuItem("Knowledge Warrior/Reset Saved Auth Session", priority = 40)]
         public static void ResetProgress()
         {
-            if (!EditorUtility.DisplayDialog("Reset progress", "Delete local level/XP/stats, clear saved login session, and start as a brand-new user on the Registration Page?", "Reset", "Cancel")) return;
+            if (!EditorUtility.DisplayDialog("Reset online session", "Clear saved login session and purge any legacy local cache files so the next Play starts on the Registration Page?", "Reset", "Cancel")) return;
             ProgressManager.ResetProgress();
-            Debug.Log("[Knowledge Warrior] Local progress & auth session reset: " + ProgressManager.SavePath);
+            QuestionManager.PurgeLegacyOfflineQuestionCache();
+            Debug.Log("[Knowledge Warrior] Saved auth session and legacy local caches cleared.");
         }
 
         [MenuItem("Knowledge Warrior/Sign Out (Test New User Registration)", priority = 41)]
@@ -132,6 +127,7 @@ namespace KnowledgeWarrior.EditorTools
             PlayerPrefs.DeleteKey(SyncManager.AuthTokenPrefKey);
             PlayerPrefs.DeleteKey(AuthManager.UsernamePrefKey);
             PlayerPrefs.DeleteKey(AuthManager.EmailPrefKey);
+            PlayerPrefs.DeleteKey(AuthManager.UserIdPrefKey);
             PlayerPrefs.Save();
             Debug.Log("[Knowledge Warrior] Signed out saved user. Next Play will start on the Registration Page.");
         }
@@ -150,19 +146,19 @@ namespace KnowledgeWarrior.EditorTools
             return false;
         }
 
-        private static void ApplyMobileLandscapeSettings(bool showDialog)
+        private static void ApplyMobilePortraitSettings(bool showDialog)
         {
-            PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
-            PlayerSettings.allowedAutorotateToPortrait = false;
+            PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
+            PlayerSettings.allowedAutorotateToPortrait = true;
             PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
-            PlayerSettings.allowedAutorotateToLandscapeLeft = true;
-            PlayerSettings.allowedAutorotateToLandscapeRight = true;
-            PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
+            PlayerSettings.allowedAutorotateToLandscapeLeft = false;
+            PlayerSettings.allowedAutorotateToLandscapeRight = false;
+            PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentOnly;
             if (PlayerSettings.productName == "unity-client") PlayerSettings.productName = "Knowledge Warrior";
             AssetDatabase.SaveAssets();
 
             if (showDialog)
-                EditorUtility.DisplayDialog("Knowledge Warrior", "Player Settings: orientation set to Landscape Left.", "OK");
+                EditorUtility.DisplayDialog("Knowledge Warrior", "Player Settings: orientation set to Portrait (1080x1920) and HTTPS enforced for Release builds.", "OK");
         }
 
         private static void ConfigureArtImporters()
@@ -209,10 +205,10 @@ namespace KnowledgeWarrior.EditorTools
         {
             var defs = new List<(string name, string sprite, Color tint, float height, int hp, int atk, int xp, bool boss, int diff)>
             {
-                ("Syntax Slime", SlimePath, Color.white, 2.4f, 60, 12, 30, false, 1),
-                ("Glitch Imp", ImpPath, Color.white, 2.8f, 85, 15, 45, false, 2),
-                ("Corrupted Slime", SlimePath, Hex("E58CFF"), 2.9f, 110, 18, 60, false, 2),
-                ("Null Pointer Dragon", BossPath, Color.white, 3.9f, 180, 24, 150, true, 3),
+                ("Syntax Slime", SlimePath, Color.white, 1.85f, 60, 12, 30, false, 1),
+                ("Glitch Imp", ImpPath, Color.white, 2.05f, 85, 15, 45, false, 2),
+                ("Corrupted Slime", SlimePath, Hex("E58CFF"), 2.25f, 110, 18, 60, false, 2),
+                ("Null Pointer Dragon", BossPath, Color.white, 2.75f, 180, 24, 150, true, 3),
             };
 
             stages.arraySize = defs.Count;
@@ -239,7 +235,7 @@ namespace KnowledgeWarrior.EditorTools
             go.transform.position = new Vector3(0f, 0f, -10f);
             var cam = go.AddComponent<Camera>();
             cam.orthographic = true;
-            cam.orthographicSize = 5f;
+            cam.orthographicSize = 5.6f;
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = Navy;
             cam.nearClipPlane = 0.3f;
@@ -260,7 +256,7 @@ namespace KnowledgeWarrior.EditorTools
             var fitter = go.AddComponent<BackgroundFitter>();
             var so = new SerializedObject(fitter);
             so.FindProperty("targetCamera").objectReferenceValue = cam;
-            so.FindProperty("groundInImage").floatValue = 0.17f;
+            so.FindProperty("groundInImage").floatValue = 0.42f;
             so.FindProperty("groundWorldY").floatValue = FeetY;
             so.ApplyModifiedPropertiesWithoutUndo();
         }
@@ -307,9 +303,8 @@ namespace KnowledgeWarrior.EditorTools
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             var scaler = canvasGo.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 1f; // landscape: keep vertical layout stable on wide phones
+            scaler.referenceResolution = new Vector2(1080, 1920);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
             canvasGo.AddComponent<GraphicRaycaster>();
             var ui = canvasGo.AddComponent<BattleUI>();
             var root = canvasGo.transform;
@@ -350,39 +345,56 @@ namespace KnowledgeWarrior.EditorTools
 
         private static void BuildPlayerHud(RectTransform parent, Dictionary<string, Object> refs)
         {
-            var panel = Panel("PlayerHUD", parent, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -20), new Vector2(620, 150));
+            var panel = Panel("PlayerHUD", parent, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(20, -84), new Vector2(510, 138));
 
-            refs["playerNameText"] = Text("Name", panel, "Knowledge Warrior", 34, TextMain, TextAlignmentOptions.MidlineLeft, true,
-                TopLeft(new Vector2(24, -14), new Vector2(420, 44)));
-            refs["playerLevelText"] = Text("Level", panel, "LV 1", 30, Gold, TextAlignmentOptions.MidlineRight, true,
-                TopRight(new Vector2(-24, -14), new Vector2(160, 44)));
+            var nameTxt = Text("Name", panel, "Knowledge Warrior", 25, TextMain, TextAlignmentOptions.MidlineLeft, true,
+                TopLeft(new Vector2(16, -10), new Vector2(326, 36)));
+            nameTxt.enableAutoSizing = true;
+            nameTxt.fontSizeMin = 16;
+            nameTxt.fontSizeMax = 25;
+            refs["playerNameText"] = nameTxt;
 
-            var (fill, ghost, label) = Bar("HP", panel, 24, 24, -66, 30, HpGreen);
+            var lvTxt = Text("Level", panel, "LV 1", 22, Gold, TextAlignmentOptions.MidlineRight, true,
+                TopRight(new Vector2(-16, -10), new Vector2(148, 36)));
+            lvTxt.enableAutoSizing = true;
+            lvTxt.fontSizeMin = 15;
+            lvTxt.fontSizeMax = 22;
+            refs["playerLevelText"] = lvTxt;
+
+            var (fill, ghost, label) = Bar("HP", panel, 16, 16, -54, 28, HpGreen);
             refs["playerHpFill"] = fill;
             refs["playerHpGhost"] = ghost;
             refs["playerHpText"] = label;
 
-            var (xpFill, _, _) = Bar("XP", panel, 24, 180, -110, 14, Violet, withGhost: false, withLabel: false);
+            var (xpFill, _, _) = Bar("XP", panel, 16, 176, -98, 14, Violet, withGhost: false, withLabel: false);
             refs["playerXpFill"] = xpFill;
-            refs["playerXpText"] = Text("XPText", panel, "0 / 100 XP", 20, TextSoft, TextAlignmentOptions.MidlineRight, false,
-                TopRight(new Vector2(-24, -102), new Vector2(150, 30)));
+            var xpTxt = Text("XPText", panel, "0 / 80 XP", 17, TextSoft, TextAlignmentOptions.MidlineRight, false,
+                TopRight(new Vector2(-16, -90), new Vector2(154, 28)));
+            xpTxt.enableAutoSizing = true;
+            xpTxt.fontSizeMin = 13;
+            xpTxt.fontSizeMax = 17;
+            refs["playerXpText"] = xpTxt;
         }
 
         private static void BuildEnemyHud(RectTransform parent, Dictionary<string, Object> refs)
         {
-            var panel = Panel("EnemyHUD", parent, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -20), new Vector2(620, 116));
+            var panel = Panel("EnemyHUD", parent, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-20, -84), new Vector2(510, 138));
 
-            refs["enemyNameText"] = Text("Name", panel, "Syntax Slime", 34, TextMain, TextAlignmentOptions.MidlineRight, true,
-                TopRight(new Vector2(-24, -14), new Vector2(440, 44)));
+            var eName = Text("Name", panel, "Syntax Slime", 24, TextMain, TextAlignmentOptions.MidlineRight, true,
+                TopRight(new Vector2(-16, -10), new Vector2(374, 36)));
+            eName.enableAutoSizing = true;
+            eName.fontSizeMin = 15;
+            eName.fontSizeMax = 24;
+            refs["enemyNameText"] = eName;
 
             var tag = Image("BossTag", panel, Hex("FF8A3D"), _rounded);
-            Place(tag.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(24, -18), new Vector2(110, 38));
+            Place(tag.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(16, -12), new Vector2(92, 32));
             tag.pixelsPerUnitMultiplier = 3f;
-            Text("Label", tag.rectTransform, "BOSS", 24, DarkText, TextAlignmentOptions.Center, true, StretchAll());
+            Text("Label", tag.rectTransform, "BOSS", 19, DarkText, TextAlignmentOptions.Center, true, StretchAll());
             tag.gameObject.SetActive(false);
             refs["bossTag"] = tag.gameObject;
 
-            var (fill, ghost, label) = Bar("HP", panel, 24, 24, -66, 30, HpRed);
+            var (fill, ghost, label) = Bar("HP", panel, 16, 16, -54, 28, HpRed);
             refs["enemyHpFill"] = fill;
             refs["enemyHpGhost"] = ghost;
             refs["enemyHpText"] = label;
@@ -392,11 +404,15 @@ namespace KnowledgeWarrior.EditorTools
         {
             var pill = Image("StagePill", parent, PanelColor, _rounded);
             pill.pixelsPerUnitMultiplier = 2f;
-            Place(pill.rectTransform, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -24), new Vector2(560, 56));
-            refs["stageText"] = Text("StageText", pill.rectTransform, "Binary Woods  •  Stage 1/4", 26, TextSoft, TextAlignmentOptions.Center, true, StretchAll());
+            Place(pill.rectTransform, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -16), new Vector2(460, 54));
+            var stageTxt = Text("StageText", pill.rectTransform, "Citadel of Code  •  Stage 1/4", 21, TextSoft, TextAlignmentOptions.Center, true, StretchAll());
+            stageTxt.enableAutoSizing = true;
+            stageTxt.fontSizeMin = 15;
+            stageTxt.fontSizeMax = 21;
+            refs["stageText"] = stageTxt;
 
-            var streak = Text("StreakText", parent, "", 34, Gold, TextAlignmentOptions.Center, true,
-                r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -88), new Vector2(500, 50)));
+            var streak = Text("StreakText", parent, "", 26, Gold, TextAlignmentOptions.Center, true,
+                r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -232), new Vector2(460, 40)));
             streak.outlineWidth = 0.2f;
             streak.outlineColor = new Color32(10, 12, 30, 255);
             refs["streakText"] = streak;
@@ -404,15 +420,14 @@ namespace KnowledgeWarrior.EditorTools
 
         private static void BuildQuestionPanel(RectTransform parent, Dictionary<string, Object> refs)
         {
-            // Border + inner fill gives a subtle glowing glass edge.
             var border = Image("QuestionPanel", parent, BorderColor, _rounded);
             border.pixelsPerUnitMultiplier = 1.4f;
             var panelRt = border.rectTransform;
             panelRt.anchorMin = new Vector2(0, 0);
             panelRt.anchorMax = new Vector2(1, 0);
             panelRt.pivot = new Vector2(0.5f, 0);
-            panelRt.offsetMin = new Vector2(24, 20);
-            panelRt.offsetMax = new Vector2(-24, 20 + 452);
+            panelRt.offsetMin = new Vector2(20, 20);
+            panelRt.offsetMax = new Vector2(-20, 20 + 1040);
             var group = border.gameObject.AddComponent<CanvasGroup>();
             refs["questionPanel"] = group;
 
@@ -422,93 +437,93 @@ namespace KnowledgeWarrior.EditorTools
             fill.raycastTarget = true;
             var p = fill.rectTransform;
 
-            // Header row
             var badge = Image("TurnBadge", p, Hex("FF8C4D"), _rounded);
             badge.pixelsPerUnitMultiplier = 2.5f;
-            Place(badge.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(26, -22), new Vector2(210, 52));
+            Place(badge.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(22, -18), new Vector2(180, 46));
             refs["turnBadge"] = badge;
-            refs["turnText"] = Text("TurnText", badge.rectTransform, "ATTACK", 30, DarkText, TextAlignmentOptions.Center, true, StretchAll());
+            refs["turnText"] = Text("TurnText", badge.rectTransform, "ATTACK", 25, DarkText, TextAlignmentOptions.Center, true, StretchAll());
 
-            refs["turnHintText"] = Text("TurnHint", p, "Answer correctly to strike!", 26, TextSoft, TextAlignmentOptions.MidlineLeft, false,
-                TopLeft(new Vector2(254, -22), new Vector2(560, 52)));
+            refs["turnHintText"] = Text("TurnHint", p, "Answer correctly to strike!", 23, TextSoft, TextAlignmentOptions.MidlineLeft, false,
+                TopLeft(new Vector2(218, -18), new Vector2(780, 46)));
 
-            var topic = Text("TopicText", p, "Subject  ·  Topic  ·  Easy", 24, TextMuted, TextAlignmentOptions.MidlineRight, false,
-                TopRight(new Vector2(-26, -22), new Vector2(720, 52)));
+            var topic = Text("TopicText", p, "Subject  ·  Topic  ·  Beginner", 20, TextMuted, TextAlignmentOptions.MidlineLeft, false,
+                r => Place(r, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -70), new Vector2(-44, 34)));
             topic.richText = false;
             topic.overflowMode = TextOverflowModes.Ellipsis;
             refs["topicText"] = topic;
 
-            // Question
-            var q = Text("QuestionText", p, "Question text goes here?", 38, TextMain, TextAlignmentOptions.MidlineLeft, true, r =>
+            var q = Text("QuestionText", p, "Question text goes here?", 34, TextMain, TextAlignmentOptions.MidlineLeft, true, r =>
             {
                 r.anchorMin = new Vector2(0, 1);
                 r.anchorMax = new Vector2(1, 1);
                 r.pivot = new Vector2(0.5f, 1);
-                r.offsetMin = new Vector2(26, -88 - 116);
-                r.offsetMax = new Vector2(-26, -88);
+                r.offsetMin = new Vector2(22, -112 - 236);
+                r.offsetMax = new Vector2(-22, -112);
             });
-            q.richText = false; // content may contain things like "<a>" (HTML questions)
+            q.richText = false;
             q.enableAutoSizing = true;
-            q.fontSizeMin = 24;
-            q.fontSizeMax = 38;
+            q.fontSizeMin = 20;
+            q.fontSizeMax = 34;
             refs["questionText"] = q;
 
-            // Answers 2x2
             var grid = Rect("Answers", p);
             grid.anchorMin = new Vector2(0, 0);
             grid.anchorMax = new Vector2(1, 0);
             grid.pivot = new Vector2(0.5f, 0);
-            grid.offsetMin = new Vector2(26, 24);
-            grid.offsetMax = new Vector2(-26, 24 + 216);
+            grid.offsetMin = new Vector2(22, 22);
+            grid.offsetMax = new Vector2(-22, 22 + 646);
             for (int i = 0; i < 4; i++) refs[$"answer{i}"] = AnswerButtonUI(grid, i);
 
-            // Feedback overlay (covers header + question, keeps the coloured answers visible)
             var fb = Image("Feedback", p, PanelSolid, _rounded);
             fb.pixelsPerUnitMultiplier = 1.6f;
             var fbRt = fb.rectTransform;
             fbRt.anchorMin = new Vector2(0, 1);
             fbRt.anchorMax = new Vector2(1, 1);
             fbRt.pivot = new Vector2(0.5f, 1);
-            fbRt.offsetMin = new Vector2(12, -12 - 196);
+            fbRt.offsetMin = new Vector2(12, -12 - 344);
             fbRt.offsetMax = new Vector2(-12, -12);
             refs["feedbackGroup"] = fb.gameObject.AddComponent<CanvasGroup>();
 
-            refs["feedbackTitle"] = Text("Title", fbRt, "Correct!", 36, HpGreen, TextAlignmentOptions.MidlineLeft, true, r =>
+            refs["feedbackTitle"] = Text("Title", fbRt, "Correct!", 34, HpGreen, TextAlignmentOptions.MidlineLeft, true, r =>
             {
                 r.anchorMin = new Vector2(0, 1);
                 r.anchorMax = new Vector2(1, 1);
                 r.pivot = new Vector2(0.5f, 1);
-                r.offsetMin = new Vector2(26, -16 - 50);
-                r.offsetMax = new Vector2(-330, -16);
+                r.offsetMin = new Vector2(22, -16 - 46);
+                r.offsetMax = new Vector2(-22, -16);
             });
 
-            var body = Text("Explanation", fbRt, "Explanation goes here.", 27, Hex("DCE4FF"), TextAlignmentOptions.TopLeft, false, r =>
+            var body = Text("Explanation", fbRt, "Explanation goes here.", 25, Hex("DCE4FF"), TextAlignmentOptions.TopLeft, false, r =>
             {
                 r.anchorMin = new Vector2(0, 0);
                 r.anchorMax = new Vector2(1, 1);
-                r.offsetMin = new Vector2(26, 16);
-                r.offsetMax = new Vector2(-330, -72);
+                r.offsetMin = new Vector2(22, 96);
+                r.offsetMax = new Vector2(-22, -68);
             });
             body.richText = false;
             body.enableAutoSizing = true;
-            body.fontSizeMin = 18;
-            body.fontSizeMax = 27;
+            body.fontSizeMin = 17;
+            body.fontSizeMax = 25;
             refs["feedbackBody"] = body;
 
-            refs["continueButton"] = PrimaryButton("ContinueButton", fbRt, "CONTINUE", 30,
-                new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-26, 0), new Vector2(280, 96), out _);
+            refs["continueButton"] = PrimaryButton("ContinueButton", fbRt, "CONTINUE", 28,
+                new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 14), new Vector2(420, 70), out _);
         }
 
         private static AnswerButton AnswerButtonUI(RectTransform grid, int index)
         {
-            int col = index % 2, row = index / 2;
+            const float cardHeight = 148f;
+            const float gap = 18f;
+            float topOffset = -index * (cardHeight + gap);
+
             var bg = Image($"Answer{(char)('A' + index)}", grid, new Color(0.11f, 0.14f, 0.32f, 0.96f), _rounded);
             bg.pixelsPerUnitMultiplier = 1.8f;
             var rt = bg.rectTransform;
-            rt.anchorMin = new Vector2(col * 0.5f, row == 0 ? 0.5f : 0f);
-            rt.anchorMax = new Vector2(col * 0.5f + 0.5f, row == 0 ? 1f : 0.5f);
-            rt.offsetMin = new Vector2(col == 0 ? 0 : 8, row == 0 ? 7 : 0);
-            rt.offsetMax = new Vector2(col == 0 ? -8 : 0, row == 0 ? 0 : -7);
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.offsetMin = new Vector2(0f, topOffset - cardHeight);
+            rt.offsetMax = new Vector2(0f, topOffset);
 
             var button = bg.gameObject.AddComponent<Button>();
             button.transition = Selectable.Transition.None;
@@ -522,19 +537,19 @@ namespace KnowledgeWarrior.EditorTools
             var badge = Image("LetterBadge", rt, Cyan, _rounded);
             badge.pixelsPerUnitMultiplier = 2.2f;
             badge.raycastTarget = false;
-            Place(badge.rectTransform, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(18, 0), new Vector2(66, 66));
-            var letter = Text("Letter", badge.rectTransform, ((char)('A' + index)).ToString(), 34, DarkText, TextAlignmentOptions.Center, true, StretchAll());
+            Place(badge.rectTransform, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(18, 0), new Vector2(64, 64));
+            var letter = Text("Letter", badge.rectTransform, ((char)('A' + index)).ToString(), 30, DarkText, TextAlignmentOptions.Center, true, StretchAll());
 
-            var label = Text("Label", rt, "Answer", 30, TextMain, TextAlignmentOptions.MidlineLeft, false, r =>
+            var label = Text("Label", rt, "Answer", 27, TextMain, TextAlignmentOptions.MidlineLeft, false, r =>
             {
                 Stretch(r);
-                r.offsetMin = new Vector2(104, 8);
-                r.offsetMax = new Vector2(-20, -8);
+                r.offsetMin = new Vector2(100, 10);
+                r.offsetMax = new Vector2(-20, -10);
             });
             label.richText = false;
             label.enableAutoSizing = true;
-            label.fontSizeMin = 18;
-            label.fontSizeMax = 30;
+            label.fontSizeMin = 17;
+            label.fontSizeMax = 27;
 
             var answer = bg.gameObject.AddComponent<AnswerButton>();
             var so = new SerializedObject(answer);
@@ -556,21 +571,21 @@ namespace KnowledgeWarrior.EditorTools
             rt.anchorMin = new Vector2(0, 0.5f);
             rt.anchorMax = new Vector2(1, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = new Vector2(0, 150);
-            rt.sizeDelta = new Vector2(0, 230);
+            rt.anchoredPosition = new Vector2(0, 380);
+            rt.sizeDelta = new Vector2(0, 188);
             refs["bannerGroup"] = strip.gameObject.AddComponent<CanvasGroup>();
 
-            var title = Text("Title", rt, "BOSS BATTLE", 88, Gold, TextAlignmentOptions.Center, true, r =>
+            var title = Text("Title", rt, "BOSS BATTLE", 62, Gold, TextAlignmentOptions.Center, true, r =>
             {
                 Stretch(r);
-                r.offsetMin = new Vector2(0, 70);
+                r.offsetMin = new Vector2(0, 56);
             });
-            title.characterSpacing = 6f;
+            title.characterSpacing = 4f;
             refs["bannerTitle"] = title;
-            refs["bannerSubtitle"] = Text("Subtitle", rt, "Enemy Name", 42, TextMain, TextAlignmentOptions.Center, false, r =>
+            refs["bannerSubtitle"] = Text("Subtitle", rt, "Enemy Name", 32, TextMain, TextAlignmentOptions.Center, false, r =>
             {
                 Stretch(r);
-                r.offsetMax = new Vector2(0, -150);
+                r.offsetMax = new Vector2(0, -118);
             });
         }
 
@@ -582,7 +597,7 @@ namespace KnowledgeWarrior.EditorTools
 
             var border = Image("Card", dim.rectTransform, BorderColor, _rounded);
             border.pixelsPerUnitMultiplier = 1.2f;
-            Place(border.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(960, 620));
+            Place(border.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(960, 680));
             refs["resultCard"] = border.rectTransform;
 
             var card = Image("Fill", border.rectTransform, PanelSolid, _rounded);

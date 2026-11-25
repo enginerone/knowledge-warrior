@@ -14,7 +14,7 @@ namespace KnowledgeWarrior.UI
     /// Subject Biome Selector overlay.
     /// Lists all subjects loaded in <see cref="QuestionManager"/>, displays the player's
     /// independent Level (1-100) and Tier Badge (Beginner, Intermediate, Advanced, Expert)
-    /// for each subject, and opens the Subject Lobby where the player chooses Monsters or Real Users.
+    /// for each subject, and opens the Subject Lobby to battle subject monsters and bosses.
     /// </summary>
     public class BiomeSelectModal : MonoBehaviour
     {
@@ -150,7 +150,7 @@ namespace KnowledgeWarrior.UI
             {
                 _subtitleText.text =
                     $"Warrior: <color=#4DE1FF>{p.playerName}</color>   •   " +
-                    $"Each subject has its own Level (1-100), Tier Badge, Theme & 1v1 Real-User Lobby";
+                    "Every subject starts at Level 1 and progresses one level at a time up to Level 100";
             }
 
             for (int i = 0; i < _cards.Count; i++)
@@ -166,6 +166,7 @@ namespace KnowledgeWarrior.UI
                 string subjName = string.IsNullOrWhiteSpace(opt.subjectFilter) ? "Programming" : opt.subjectFilter;
                 var sp = ProgressManager.GetSubjectProgress(subjName);
                 var tier = SubjectTierSystem.GetTierForLevel(sp.level);
+                int nextXp = SubjectTierSystem.XpToNextSubjectLevel(sp.level);
                 Color badgeColor = SubjectTierSystem.GetBadgeColor(tier);
                 bool isSelected = string.Equals(opt.subjectFilter ?? string.Empty, _activeSubject ?? string.Empty, StringComparison.OrdinalIgnoreCase);
 
@@ -177,8 +178,11 @@ namespace KnowledgeWarrior.UI
                 c.subjectBadgeText.color = opt.accentColor;
                 c.levelBadgeText.text = $"LV {sp.level}/100  •  {SubjectTierSystem.GetBadgeName(tier).ToUpperInvariant()} BADGE";
                 c.levelBadgeText.color = badgeColor;
+                int unseenCount = _questionManager.CountUnseenForSubject(subjName);
                 c.topicsText.text = opt.topicsSummary;
-                c.countText.text = $"{opt.questionCount} Questions  •  {sp.points} PTS";
+                c.countText.text = sp.level >= SubjectTierSystem.MaxLevel
+                    ? $"{unseenCount} Unseen Questions  •  {sp.points} PTS (MAX)"
+                    : $"{unseenCount} Unseen Questions  •  {sp.xp}/{nextXp} XP";
                 c.launchBtnBg.color = isSelected ? Green : opt.accentColor;
                 c.launchBtnText.text = "OPEN SUBJECT LOBBY";
 
@@ -246,44 +250,44 @@ namespace KnowledgeWarrior.UI
 
             Transform safeArea = canvasRoot.Find("SafeArea") ?? canvasRoot;
             var hudBtn = CreateButton("BiomeSelectHudButton", safeArea, CardColor,
-                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(-410f, -24f), new Vector2(230f, 56f), "SUBJECT LOBBIES", 20, Gold);
+                new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
+                new Vector2(20f, -16f), new Vector2(270f, 54f), "SUBJECT LOBBIES", 19, Gold);
             hudBtn.onClick.AddListener(() => Show(allowClose: true));
 
-            var backdrop = CreateImage("Backdrop", rt, new Color(0.01f, 0.02f, 0.07f, 0.88f));
+            var backdrop = CreateImage("Backdrop", rt, new Color(0.01f, 0.02f, 0.07f, 0.96f));
             Stretch(backdrop.rectTransform);
             _modalGroup = backdrop.gameObject.AddComponent<CanvasGroup>();
 
             var windowBorder = CreateImage("WindowBorder", backdrop.rectTransform, BorderColor);
-            Place(windowBorder.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1740, 940));
+            Place(windowBorder.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1020, 1820));
 
             var window = CreateImage("WindowFill", windowBorder.rectTransform, PanelColor);
             Stretch(window.rectTransform, 2, 2, 2, 2);
             var w = window.rectTransform;
 
-            CreateText("HeaderTitle", w, "SELECT A SUBJECT LOBBY (MONSTERS OR 1v1 REAL USERS)", 36, Gold, TextAlignmentOptions.MidlineLeft, true,
-                r => Place(r, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(36, -20), new Vector2(1240, 50)));
+            CreateText("HeaderTitle", w, "SELECT A SUBJECT BIOME", 34, Gold, TextAlignmentOptions.MidlineLeft, true,
+                r => Place(r, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(32, -20), new Vector2(760, 48)));
 
-            _subtitleText = CreateText("HeaderSubtitle", w, "", 21, TextSoft, TextAlignmentOptions.MidlineLeft, false,
-                r => Place(r, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(36, -68), new Vector2(1380, 36)));
+            _subtitleText = CreateText("HeaderSubtitle", w, "", 19, TextSoft, TextAlignmentOptions.TopLeft, false,
+                r => Place(r, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(32, -72), new Vector2(956, 56)));
 
             _closeButton = CreateButton("CloseButton", w, new Color(1f, 0.36f, 0.48f, 1f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1),
-                new Vector2(-28, -24), new Vector2(150, 56), "RESUME", 24, TextMain);
+                new Vector2(-28, -18), new Vector2(160, 52), "RESUME", 22, TextMain);
             _closeButton.onClick.AddListener(Hide);
 
             _cards.Clear();
-            const float startX = 36f;
-            const float startY = -124f;
-            const float cardW = 402f;
-            const float cardH = 376f;
+            const float startX = 32f;
+            const float startY = -148f;
+            const float cardW = 468f;
+            const float cardH = 380f;
             const float gapX = 20f;
-            const float gapY = 24f;
+            const float gapY = 20f;
 
             for (int i = 0; i < MaxBiomeCards; i++)
             {
-                int col = i % 4;
-                int row = i / 4;
+                int col = i % 2;
+                int row = i / 2;
                 float x = startX + col * (cardW + gapX);
                 float y = startY - row * (cardH + gapY);
 
