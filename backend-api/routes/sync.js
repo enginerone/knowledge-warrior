@@ -1,63 +1,384 @@
 const express = require('express');
 const db = require('../db');
-const { optionalToken } = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
+const { triggerBackgroundReplenishIfLow } = require('../services/questionReplenisher');
+const {
+  DEFAULT_SUBJECTS,
+  MAX_BATTLE_XP_AWARD,
+  xpToNextSubjectLevel,
+  getBadgeTierForLevel,
+  calculateGlobalLevel,
+  applySequentialSubjectXp,
+  buildDefaultSubjectRow,
+} = require('../services/progressionService');
 
 const router = express.Router();
 
-function calculateLevel(totalXp) {
-  if (!totalXp || totalXp <= 0) return 1;
-  // Formula from GDD: XP = 100 * (L - 1)^1.6  =>  L = floor((XP / 100)^(1 / 1.6)) + 1
-  return Math.floor(Math.pow(totalXp / 100, 1 / 1.6)) + 1;
+async function ensureUserDefaultSubjects(client, userId) {
+  const biomesRes = await client.query('SELECT name FROM biomes ORDER BY display_order ASC, name ASC');
+  const allSubjectNames = new Set(DEFAULT_SUBJECTS);
+  for (const row of biomesRes.rows) {
+    if (row.name && row.name.trim()) {
+      allSubjectNames.add(row.name.trim());
+    }
+  }
+
+  for (const subject of allSubjectNames) {
+    await client.query(
+      `INSERT INTO user_subject_progress (user_id, subject, subject_level, subject_xp, subject_points, badge_tier, updated_at)
+       VALUES ($1, $2, 1, 0, 0, 'Beginner', NOW())
+       ON CONFLICT (user_id, subject) DO NOTHING`,
+      [userId, subject]
+    );
+  }
 }
 
-// POST /api/v1/sync/progress
-router.post('/progress', optionalToken, async (req, res, next) => {
+async function fetchUserSummaryAndRank(client, userId) {
+  const userRes = await client.query(
+    `SELECT id,
+            username,
+            GREATEST(0, COALESCE(total_xp, 0))::int AS "totalXp",
+            GREATEST(1, COALESCE(current_level, 1))::int AS "currentLevel",
+            COALESCE(battles_won, 0)::int AS "battlesWon",
+            COALESCE(battles_lost, 0)::int AS "battlesLost",
+            COALESCE(is_banned, false) AS "isBanned"
+     FROM users
+     WHERE id = $1`,
+    [userId]
+  );
+
+  if (userRes.rows.length === 0) return null;
+  const user = userRes.rows[0];
+
+  const statsRes = await client.query(
+    `SELECT COUNT(*)::int AS "questionsAnswered",
+            COUNT(*) FILTER (WHERE was_correct = true)::int AS "correctAnswers"
+     FROM progress_logs
+     WHERE user_id = $1`,
+    [userId]
+  );
+
+  const rankRes = await client.query(
+    `SELECT COUNT(*)::int + 1 AS rank
+     FROM users
+     WHERE (role != 'admin' OR role IS NULL)
+       AND COALESCE(is_banned, false) = false
+       AND total_xp > $1`,
+    [user.totalXp]
+  );
+
+  return {
+    ...user,
+    questionsAnswered: statsRes.rows[0]?.questionsAnswered || 0,
+    correctAnswers: statsRes.rows[0]?.correctAnswers || 0,
+    globalRank: rankRes.rows[0]?.rank || 1,
+  };
+}
+
+// GET /api/v1/sync/subject-progress
+router.get('/subject-progress', authenticateToken, async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const summary = await fetchUserSummaryAndRank(client, req.user.id);
+    if (!summary) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Authenticated user account was not found.' });
+    }
+    if (summary.isBanned) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'This account has been disabled by an administrator.' });
+    }
+
+    await ensureUserDefaultSubjects(client, req.user.id);
+
+    const result = await client.query(
+      `SELECT subject,
+              subject_level AS "subjectLevel",
+              COALESCE(subject_xp, 0)::int AS "subjectXp",
+              COALESCE(subject_points, 0)::int AS "subjectPoints",
+              badge_tier AS "badgeTier",
+              updated_at AS "updatedAt"
+       FROM user_subject_progress
+       WHERE user_id = $1
+       ORDER BY subject ASC`,
+      [req.user.id]
+    );
+
+    const seenRes = await client.query(
+      `SELECT DISTINCT question_id::text AS id
+       FROM (
+         SELECT question_id FROM user_seen_questions WHERE user_id = $1
+         UNION
+         SELECT question_id FROM progress_logs WHERE user_id = $1 AND question_id IS NOT NULL
+       ) combined`,
+      [req.user.id]
+    );
+
+    await client.query('COMMIT');
+
+    const subjects = result.rows.map((row) => {
+      const lv = Math.max(1, Math.min(100, row.subjectLevel || 1));
+      return {
+        subject: row.subject,
+        subjectLevel: lv,
+        subjectXp: Math.max(0, row.subjectXp || 0),
+        subjectPoints: Math.max(0, row.subjectPoints || 0),
+        xpToNextLevel: xpToNextSubjectLevel(lv),
+        badgeTier: getBadgeTierForLevel(lv),
+        updatedAt: row.updatedAt,
+      };
+    });
+
+    res.json({
+      player: summary,
+      seenQuestionIds: seenRes.rows.map((r) => r.id),
+      subjects,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/v1/sync/battle
+router.post('/battle', authenticateToken, async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    const subject = String(req.body.subject || 'Programming').trim() || 'Programming';
+    const victory = Boolean(req.body.victory);
+    const totalAnswers = Math.max(0, Math.min(50, parseInt(req.body.totalAnswers, 10) || 0));
+    const correctAnswers = Math.max(0, Math.min(totalAnswers, parseInt(req.body.correctAnswers, 10) || 0));
+    const xpGained = Math.max(0, Math.min(MAX_BATTLE_XP_AWARD, parseInt(req.body.xpGained, 10) || 0));
+    const answerLogs = Array.isArray(req.body.answerLogs) ? req.body.answerLogs : [];
+
+    await client.query('BEGIN');
+
+    const userRes = await client.query(
+      `SELECT id,
+              GREATEST(0, COALESCE(total_xp, 0))::int AS total_xp,
+              GREATEST(1, COALESCE(current_level, 1))::int AS current_level,
+              COALESCE(is_banned, false) AS is_banned
+       FROM users
+       WHERE id = $1
+       FOR UPDATE`,
+      [req.user.id]
+    );
+
+    if (userRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Authenticated user account was not found.' });
+    }
+    if (userRes.rows[0].is_banned) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'This account has been disabled by an administrator.' });
+    }
+
+    await ensureUserDefaultSubjects(client, req.user.id);
+
+    const subjRes = await client.query(
+      `SELECT subject_level, COALESCE(subject_xp, 0)::int AS subject_xp, COALESCE(subject_points, 0)::int AS subject_points
+       FROM user_subject_progress
+       WHERE user_id = $1 AND LOWER(subject) = LOWER($2)
+       FOR UPDATE`,
+      [req.user.id, subject]
+    );
+
+    const existingSubj = subjRes.rows[0] || buildDefaultSubjectRow(subject);
+    const nextSubj = applySequentialSubjectXp(
+      existingSubj.subject_level ?? existingSubj.subjectLevel,
+      existingSubj.subject_xp ?? existingSubj.subjectXp,
+      existingSubj.subject_points ?? existingSubj.subjectPoints,
+      xpGained
+    );
+
+    await client.query(
+      `INSERT INTO user_subject_progress (user_id, subject, subject_level, subject_xp, subject_points, badge_tier, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (user_id, subject)
+       DO UPDATE SET
+         subject_level = EXCLUDED.subject_level,
+         subject_xp = EXCLUDED.subject_xp,
+         subject_points = EXCLUDED.subject_points,
+         badge_tier = EXCLUDED.badge_tier,
+         updated_at = NOW()`,
+      [
+        req.user.id,
+        subject,
+        nextSubj.subjectLevel,
+        nextSubj.subjectXp,
+        nextSubj.subjectPoints,
+        nextSubj.badgeTier,
+      ]
+    );
+
+    if (answerLogs.length > 0) {
+      for (const entry of answerLogs.slice(0, 50)) {
+        const questionId = entry && typeof entry.questionId === 'string' && entry.questionId.length === 36
+          ? entry.questionId
+          : null;
+        await client.query(
+          `INSERT INTO progress_logs (user_id, question_id, was_correct, response_time_ms, answered_at)
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [req.user.id, questionId, Boolean(entry?.wasCorrect), Math.max(0, parseInt(entry?.responseTimeMs, 10) || 0)]
+        );
+        if (questionId) {
+          await client.query(
+            `INSERT INTO user_seen_questions (user_id, question_id, seen_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (user_id, question_id) DO NOTHING`,
+            [req.user.id, questionId]
+          );
+        }
+      }
+    } else if (totalAnswers > 0) {
+      for (let i = 0; i < totalAnswers; i++) {
+        await client.query(
+          `INSERT INTO progress_logs (user_id, question_id, was_correct, response_time_ms, answered_at)
+           VALUES ($1, NULL, $2, 0, NOW())`,
+          [req.user.id, i < correctAnswers]
+        );
+      }
+    }
+
+    const updatedTotalXp = userRes.rows[0].total_xp + xpGained;
+    const updatedGlobalLevel = calculateGlobalLevel(updatedTotalXp);
+
+    await client.query(
+      `UPDATE users
+       SET total_xp = $1,
+           current_level = $2,
+           battles_won = COALESCE(battles_won, 0) + $3,
+           battles_lost = COALESCE(battles_lost, 0) + $4,
+           last_synced_at = NOW()
+       WHERE id = $5`,
+      [updatedTotalXp, updatedGlobalLevel, victory ? 1 : 0, victory ? 0 : 1, req.user.id]
+    );
+
+    const playerSummary = await fetchUserSummaryAndRank(client, req.user.id);
+
+    await client.query('COMMIT');
+
+    const nextTierDifficulty = nextSubj.subjectLevel <= 15 ? 1 : (nextSubj.subjectLevel <= 30 ? 2 : (nextSubj.subjectLevel <= 60 ? 3 : 4));
+    triggerBackgroundReplenishIfLow(req.user.id, subject, nextTierDifficulty);
+
+    res.json({
+      status: 'success',
+      player: playerSummary,
+      subjectProgress: {
+        subject,
+        ...nextSubj,
+      },
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/v1/sync/subject-progress (blocks direct level jumps; only sequential XP increments allowed)
+router.post('/subject-progress', authenticateToken, async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    const subject = String(req.body.subject || 'Programming').trim() || 'Programming';
+    const requestedLevel = req.body.subjectLevel !== undefined ? parseInt(req.body.subjectLevel, 10) : null;
+    const xpGained = Math.max(0, Math.min(MAX_BATTLE_XP_AWARD, parseInt(req.body.xpGained, 10) || 0));
+
+    await client.query('BEGIN');
+    await ensureUserDefaultSubjects(client, req.user.id);
+
+    const existingRes = await client.query(
+      `SELECT subject_level, COALESCE(subject_xp, 0)::int AS subject_xp, COALESCE(subject_points, 0)::int AS subject_points
+       FROM user_subject_progress
+       WHERE user_id = $1 AND LOWER(subject) = LOWER($2)
+       FOR UPDATE`,
+      [req.user.id, subject]
+    );
+
+    const current = existingRes.rows[0] || { subject_level: 1, subject_xp: 0, subject_points: 0 };
+
+    if (requestedLevel !== null && requestedLevel !== current.subject_level) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'Jumping directly to another subject level is not allowed. Subject levels advance sequentially from Level 1 through earned battle XP.',
+      });
+    }
+
+    const nextSubj = applySequentialSubjectXp(
+      current.subject_level,
+      current.subject_xp,
+      current.subject_points,
+      xpGained
+    );
+
+    await client.query(
+      `UPDATE user_subject_progress
+       SET subject_level = $1,
+           subject_xp = $2,
+           subject_points = $3,
+           badge_tier = $4,
+           updated_at = NOW()
+       WHERE user_id = $5 AND LOWER(subject) = LOWER($6)`,
+      [nextSubj.subjectLevel, nextSubj.subjectXp, nextSubj.subjectPoints, nextSubj.badgeTier, req.user.id, subject]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      status: 'success',
+      progress: {
+        subject,
+        ...nextSubj,
+      },
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/v1/sync/progress (authenticated online event batch endpoint)
+router.post('/progress', authenticateToken, async (req, res, next) => {
   const client = await db.pool.connect();
   try {
     const { events } = req.body;
-
     if (!Array.isArray(events) || events.length === 0) {
-      return res.status(400).json({ error: 'Array of progress events is required' });
+      return res.status(400).json({ error: 'Array of progress events is required.' });
     }
 
     await client.query('BEGIN');
 
-    let userId = req.user ? req.user.id : null;
-    const clientHash = events[0].clientHash;
-
-    // If unauthenticated guest, check or create guest warrior user for this device
-    if (!userId) {
-      if (clientHash) {
-        const guestName = `guest_${clientHash.slice(0, 10)}`;
-        const userRes = await client.query('SELECT id FROM users WHERE username = $1', [guestName]);
-        if (userRes.rows.length > 0) {
-          userId = userRes.rows[0].id;
-        } else {
-          const insertRes = await client.query(
-            `INSERT INTO users (username, role, total_xp, current_level)
-             VALUES ($1, 'player', 0, 1) RETURNING id`,
-            [guestName]
-          );
-          userId = insertRes.rows[0].id;
-        }
-      } else {
-        return res.status(400).json({ error: 'Authentication token or clientHash is required' });
-      }
+    const currentRes = await client.query(
+      'SELECT GREATEST(0, COALESCE(total_xp, 0))::int AS total_xp, COALESCE(is_banned, false) AS is_banned FROM users WHERE id = $1 FOR UPDATE',
+      [req.user.id]
+    );
+    if (currentRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+    if (currentRes.rows[0].is_banned) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'User account is disabled.' });
     }
 
     let addedXp = 0;
-
-    for (const evt of events) {
-      const xpGained = parseInt(evt.xpGained, 10) || 0;
+    for (const evt of events.slice(0, 20)) {
+      const xpGained = Math.max(0, Math.min(MAX_BATTLE_XP_AWARD, parseInt(evt.xpGained, 10) || 0));
       addedXp += xpGained;
 
-      // Log to progress_logs if questionId is provided
       if (evt.questionId) {
         await client.query(
           `INSERT INTO progress_logs (user_id, question_id, was_correct, response_time_ms, answered_at)
            VALUES ($1, $2, $3, $4, $5)`,
           [
-            userId,
+            req.user.id,
             evt.questionId,
             evt.wasCorrect ?? true,
             evt.responseTimeMs || 0,
@@ -67,34 +388,17 @@ router.post('/progress', optionalToken, async (req, res, next) => {
       }
     }
 
-    // Fetch current total_xp and check if user is banned
-    const currentRes = await client.query('SELECT total_xp, COALESCE(is_banned, false) AS is_banned FROM users WHERE id = $1', [userId]);
-    if (currentRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'User account not found' });
-    }
-    if (currentRes.rows[0].is_banned) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'User account is banned (disabled)' });
-    }
-    const currentXp = (currentRes.rows[0]?.total_xp || 0) + addedXp;
-    const newLevel = calculateLevel(currentXp);
+    const currentXp = currentRes.rows[0].total_xp + addedXp;
+    const newLevel = calculateGlobalLevel(currentXp);
 
-    // Update user stats
     await client.query(
-      `UPDATE users 
+      `UPDATE users
        SET total_xp = $1, current_level = $2, last_synced_at = NOW()
        WHERE id = $3`,
-      [currentXp, newLevel, userId]
+      [currentXp, newLevel, req.user.id]
     );
 
-    // Calculate global rank
-    const rankRes = await client.query(
-      'SELECT COUNT(*)::int + 1 AS rank FROM users WHERE total_xp > $1',
-      [currentXp]
-    );
-    const globalRank = rankRes.rows[0]?.rank || 1;
-
+    const summary = await fetchUserSummaryAndRank(client, req.user.id);
     await client.query('COMMIT');
 
     res.json({
@@ -102,7 +406,7 @@ router.post('/progress', optionalToken, async (req, res, next) => {
       processedEvents: events.length,
       currentLevel: newLevel,
       totalXp: currentXp,
-      globalRank,
+      globalRank: summary?.globalRank || 1,
     });
   } catch (err) {
     await client.query('ROLLBACK');

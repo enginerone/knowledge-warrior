@@ -88,12 +88,14 @@ namespace KnowledgeWarrior.UI
         private float _enemyHpTarget = 1f, _enemyGhost = 1f, _enemyHpShown = 1f;
         private float _ghostDelay;
         private Coroutine _feedbackRoutine, _resultRoutine, _panelRoutine;
+        private GameObject _safeAreaObject;
 
         public void Initialize(Action<int> onAnswer, Action onContinue, Action onResult)
         {
             _onAnswer = onAnswer;
             _onContinue = onContinue;
             _onResult = onResult;
+            _safeAreaObject = transform.Find("SafeArea")?.gameObject;
 
             for (int i = 0; i < answerButtons.Length; i++)
             {
@@ -107,6 +109,26 @@ namespace KnowledgeWarrior.UI
             SetGroup(resultGroup, false);
             SetGroup(questionPanel, false);
             if (streakText != null) streakText.text = string.Empty;
+        }
+
+        public void SetGameplayHudVisible(bool visible)
+        {
+            if (_safeAreaObject == null)
+            {
+                _safeAreaObject = transform.Find("SafeArea")?.gameObject;
+            }
+            if (_safeAreaObject != null)
+            {
+                _safeAreaObject.SetActive(visible);
+            }
+            if (!visible)
+            {
+                _answersEnabled = false;
+                SetGroup(questionPanel, false);
+                SetGroup(feedbackGroup, false);
+                SetGroup(bannerGroup, false);
+                SetGroup(resultGroup, false);
+            }
         }
 
         public void SetPlayerInfo(string playerName, int level, int xp, int xpToNext, string subject = null)

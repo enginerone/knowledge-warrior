@@ -1,16 +1,20 @@
-name: Auto Merge Testing to Main
+name: Validate Testing and Manual Release to Main
 
 on:
   push:
     branches:
       - testing
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: auto-merge-testing-to-main
+  group: validate-and-promote-main
   cancel-in-progress: false
 
 jobs:
@@ -18,7 +22,7 @@ jobs:
     name: Validate Backend and Admin Frontend
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout testing branch
+      - name: Checkout branch
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -38,7 +42,7 @@ jobs:
       - name: Check Backend API JavaScript syntax
         working-directory: backend-api
         run: |
-          for file in server.js db.js middleware/*.js routes/*.js services/*.js scripts/*.js; do
+          for file in server.js db.js data/*.js middleware/*.js routes/*.js services/*.js scripts/*.js; do
             if [ -f "$file" ]; then
               node --check "$file"
             fi
@@ -51,8 +55,9 @@ jobs:
           npm run build
 
   merge-to-main:
-    name: Merge Testing into Main
+    name: Promote Testing into Main (Manual Cloud Deploy Only)
     needs: validate
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout full repository history
@@ -71,5 +76,5 @@ jobs:
             echo "Main branch already contains all commits from testing."
             exit 0
           fi
-          git merge origin/testing --no-edit -m "chore(release): automatically merge testing into main"
+          git merge origin/testing --no-edit -m "chore(release): promote validated testing branch into main"
           git push origin main

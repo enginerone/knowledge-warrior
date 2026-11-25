@@ -9,31 +9,28 @@ using Random = System.Random;
 namespace KnowledgeWarrior.Data
 {
     /// <summary>
-    /// Loads, validates, and serves questions aligned with the player's subject and level tier
-    /// (Beginner Lv 1-15, Intermediate Lv 16-30, Advanced Lv 31-60, Expert Lv 61-100).
+    /// Online-only question bank manager that stores approved curriculum questions fetched live
+    /// from the Knowledge Warrior server, permanently excludes any question once it has appeared
+    /// to the authenticated player, and locks each subject strictly to its own subject pool.
     /// </summary>
     public class QuestionManager : MonoBehaviour
     {
-        public const string CacheFileName = "questions_cache.json";
-
-        [Tooltip("The questions.json bundled inside the build (offline fallback).")]
-        [SerializeField] private TextAsset bundledQuestions;
+        private const string LegacyCacheFileName = "questions_cache.json";
 
         [Tooltip("Shuffle the order of the 4 choices every time a question is shown.")]
         [SerializeField] private bool shuffleChoices = true;
 
         private readonly List<QuestionData> _questions = new();
         private readonly Dictionary<string, Queue<QuestionData>> _decks = new();
+        private readonly HashSet<string> _seenQuestionIds = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _seenNormalizedTexts = new(StringComparer.OrdinalIgnoreCase);
         private readonly Random _rng = new();
-        private string _lastQuestionId;
-        private string _lastQuestionNormalizedText;
-
-        public static string CachePath => Path.Combine(Application.persistentDataPath, CacheFileName);
 
         public int Count => _questions.Count;
+        public int SeenCount => _seenQuestionIds.Count;
         public int BankVersion { get; private set; }
         public string BankVersionHash { get; private set; }
-        public string LoadedFrom { get; private set; }
+        public string LoadedFrom { get; private set; } = "unloaded";
         public IReadOnlyList<QuestionData> All => _questions;
 
         public IReadOnlyList<string> Subjects =>
@@ -43,62 +40,116 @@ namespace KnowledgeWarrior.Data
 
         private void Awake()
         {
-            Load();
+            PurgeLegacyOfflineQuestionCache();
         }
 
-        /// <summary>Loads questions from local OTA cache first, falling back to the bundled file.</summary>
-        public void Load()
+        public static void PurgeLegacyOfflineQuestionCache()
         {
-            if (File.Exists(CachePath))
+            try
             {
-                try
+                string legacyPath = Path.Combine(Application.persistentDataPath, LegacyCacheFileName);
+                if (File.Exists(legacyPath)) File.Delete(legacyPath);
+                if (File.Exists(legacyPath + ".tmp")) File.Delete(legacyPath + ".tmp");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[QuestionManager] Could not remove legacy question cache: {e.Message}");
+            }
+        }
+
+        public void ResetSeenQuestionsForLogout()
+        {
+            _seenQuestionIds.Clear();
+            _seenNormalizedTexts.Clear();
+            _decks.Clear();
+        }
+
+        public void SetSeenQuestionIds(IEnumerable<string> questionIds, bool resetExisting = false)
+        {
+            if (resetExisting)
+            {
+                _seenQuestionIds.Clear();
+                _seenNormalizedTexts.Clear();
+            }
+
+            if (questionIds != null)
+            {
+                foreach (string rawId in questionIds)
                 {
-                    if (TryApply(File.ReadAllText(CachePath), "cache")) return;
-                }
-                catch (Exception e)
-                {
-                    Debug.LogWarning($"[QuestionManager] Could not read cache, falling back to bundled questions. {e.Message}");
+                    if (!string.IsNullOrWhiteSpace(rawId))
+                    {
+                        _seenQuestionIds.Add(rawId.Trim());
+                    }
                 }
             }
 
-            if (bundledQuestions != null && TryApply(bundledQuestions.text, "bundled")) return;
-
-            Debug.LogError("[QuestionManager] No questions could be loaded! Assign 'Bundled Questions' in the Inspector.");
+            SyncSeenNormalizedTextsWithLoadedBank();
+            _decks.Clear();
+            OnQuestionsLoaded?.Invoke();
         }
 
-        /// <summary>
-        /// Validates and saves a freshly downloaded bank to disk, then activates it.
-        /// </summary>
-        public bool SaveToCacheAndApply(string json)
+        public bool IsQuestionSeen(QuestionData q)
         {
-            if (!TryParse(json, out var bank, out var error))
+            if (q == null) return true;
+            if (!string.IsNullOrWhiteSpace(q.id) && _seenQuestionIds.Contains(q.id)) return true;
+            string norm = NormalizeQuestionText(q.question);
+            return !string.IsNullOrEmpty(norm) && _seenNormalizedTexts.Contains(norm);
+        }
+
+        public int CountUnseenForSubject(string subject)
+        {
+            if (string.IsNullOrWhiteSpace(subject)) return 0;
+            return _questions.Count(q =>
+                string.Equals(q.subject, subject, StringComparison.OrdinalIgnoreCase) &&
+                !IsQuestionSeen(q));
+        }
+
+        public int CountUnseenForSubjectAndLevel(string subject, int subjectLevel)
+        {
+            if (string.IsNullOrWhiteSpace(subject)) return 0;
+            int exactTierDifficulty = SubjectTierSystem.GetAlignedQuestionDifficulty(subjectLevel);
+            return _questions.Count(q =>
+                string.Equals(q.subject, subject, StringComparison.OrdinalIgnoreCase) &&
+                q.difficulty == exactTierDifficulty &&
+                !IsQuestionSeen(q));
+        }
+
+        public bool ApplyOnlineQuestionsJson(string json, out string error)
+        {
+            if (!TryParse(json, out var bank, out error))
             {
-                Debug.LogWarning($"[QuestionManager] Rejected downloaded questions: {error}");
+                Debug.LogWarning($"[QuestionManager] Rejected server question payload: {error}");
                 return false;
             }
 
-            if (LoadedFrom == "cache" &&
-                !string.IsNullOrEmpty(bank.versionHash) &&
-                string.Equals(bank.versionHash, BankVersionHash, StringComparison.Ordinal))
+            if (bank.seenQuestionIds != null)
             {
-                return true;
+                foreach (string seenId in bank.seenQuestionIds)
+                {
+                    if (!string.IsNullOrWhiteSpace(seenId))
+                    {
+                        _seenQuestionIds.Add(seenId.Trim());
+                    }
+                }
             }
 
-            string tmp = CachePath + ".tmp";
-            File.WriteAllText(tmp, json);
-            if (File.Exists(CachePath)) File.Delete(CachePath);
-            File.Move(tmp, CachePath);
-
-            Apply(bank, "cache");
+            Apply(bank, "online-server");
             return true;
         }
 
+        public void ClearLoadedQuestions()
+        {
+            _questions.Clear();
+            _decks.Clear();
+            BankVersion = 0;
+            BankVersionHash = null;
+            LoadedFrom = "unloaded";
+        }
+
         /// <summary>
-        /// Draws the next question strictly aligned with the player's subject and current level tier:
-        /// Beginner (Lv 1-15) -> Difficulty 1 only,
-        /// Intermediate (Lv 16-30) -> Difficulty 2 only,
-        /// Advanced (Lv 31-60) -> Difficulty 3 only,
-        /// Expert (Lv 61-100) -> Difficulty 4 only.
+        /// Draws a unique, never-before-seen question strictly belonging to <paramref name="subject"/>
+        /// and aligned to <paramref name="subjectLevel"/>. Once returned, the question is permanently
+        /// marked seen and will never be returned again.
         /// </summary>
         public QuestionData GetQuestionForSubjectAndLevel(string subject, int subjectLevel)
         {
@@ -106,74 +157,87 @@ namespace KnowledgeWarrior.Data
             return GetNextQuestion(subject, exactTierDifficulty, exactDifficultyOnly: true);
         }
 
-        /// <summary>
-        /// Draws the next question matching the subject and difficulty filter.
-        /// </summary>
-        public QuestionData GetNextQuestion(string subject = null, int targetDifficulty = 1, bool exactDifficultyOnly = true)
+        public QuestionData GetNextQuestion(string subject, int targetDifficulty = 1, bool exactDifficultyOnly = true)
         {
-            if (_questions.Count == 0) return null;
+            if (_questions.Count == 0 || string.IsNullOrWhiteSpace(subject)) return null;
 
-            string key = $"{subject ?? "*"}|{targetDifficulty}|{exactDifficultyOnly}";
+            string trimmedSubject = subject.Trim();
+            string key = $"{trimmedSubject.ToLowerInvariant()}|{targetDifficulty}|{exactDifficultyOnly}";
+
+            if (_decks.TryGetValue(key, out var existingDeck))
+            {
+                while (existingDeck.Count > 0 && IsQuestionSeen(existingDeck.Peek()))
+                {
+                    existingDeck.Dequeue();
+                }
+            }
+
             if (!_decks.TryGetValue(key, out var deck) || deck.Count == 0)
             {
                 List<QuestionData> pool;
                 if (exactDifficultyOnly)
                 {
                     pool = _questions.Where(q =>
-                        (string.IsNullOrEmpty(subject) || string.Equals(q.subject, subject, StringComparison.OrdinalIgnoreCase)) &&
-                        q.difficulty == targetDifficulty).ToList();
+                        string.Equals(q.subject, trimmedSubject, StringComparison.OrdinalIgnoreCase) &&
+                        q.difficulty == targetDifficulty &&
+                        !IsQuestionSeen(q)).ToList();
                 }
                 else
                 {
                     pool = _questions.Where(q =>
-                        (string.IsNullOrEmpty(subject) || string.Equals(q.subject, subject, StringComparison.OrdinalIgnoreCase)) &&
-                        q.difficulty <= targetDifficulty).ToList();
+                        string.Equals(q.subject, trimmedSubject, StringComparison.OrdinalIgnoreCase) &&
+                        q.difficulty <= targetDifficulty &&
+                        !IsQuestionSeen(q)).ToList();
                 }
 
-                // Fallback 1: Same subject, closest difficulty
-                if (pool.Count == 0 && !string.IsNullOrEmpty(subject))
-                {
-                    pool = _questions
-                        .Where(q => string.Equals(q.subject, subject, StringComparison.OrdinalIgnoreCase))
-                        .OrderBy(q => Mathf.Abs(q.difficulty - targetDifficulty))
-                        .ToList();
-                }
-
-                // Fallback 2: Any subject at exact difficulty
                 if (pool.Count == 0)
                 {
-                    pool = _questions.Where(q => q.difficulty == targetDifficulty).ToList();
-                }
-
-                // Fallback 3: Whole bank
-                if (pool.Count == 0)
-                {
-                    pool = new List<QuestionData>(_questions);
+                    return null;
                 }
 
                 Shuffle(pool);
-                if (pool.Count > 1 &&
-                    (pool[0].id == _lastQuestionId ||
-                     NormalizeQuestionText(pool[0].question) == _lastQuestionNormalizedText))
-                {
-                    (pool[0], pool[pool.Count - 1]) = (pool[pool.Count - 1], pool[0]);
-                }
-
                 deck = new Queue<QuestionData>(pool);
                 _decks[key] = deck;
             }
 
             var next = deck.Dequeue();
-            _lastQuestionId = next.id;
-            _lastQuestionNormalizedText = NormalizeQuestionText(next.question);
+            MarkQuestionSeenLocally(next);
             return shuffleChoices ? next.CreateShuffledCopy(_rng) : next;
         }
 
-        /// <summary>Parses and validates JSON. Invalid individual questions are skipped with a warning.</summary>
+        private void MarkQuestionSeenLocally(QuestionData q)
+        {
+            if (q == null) return;
+            if (!string.IsNullOrWhiteSpace(q.id))
+            {
+                _seenQuestionIds.Add(q.id.Trim());
+            }
+            string norm = NormalizeQuestionText(q.question);
+            if (!string.IsNullOrEmpty(norm))
+            {
+                _seenNormalizedTexts.Add(norm);
+            }
+        }
+
+        private void SyncSeenNormalizedTextsWithLoadedBank()
+        {
+            foreach (var q in _questions)
+            {
+                if (q != null && !string.IsNullOrWhiteSpace(q.id) && _seenQuestionIds.Contains(q.id))
+                {
+                    string norm = NormalizeQuestionText(q.question);
+                    if (!string.IsNullOrEmpty(norm))
+                    {
+                        _seenNormalizedTexts.Add(norm);
+                    }
+                }
+            }
+        }
+
         public static bool TryParse(string json, out QuestionBank bank, out string error)
         {
             bank = null;
-            if (string.IsNullOrWhiteSpace(json)) { error = "file is empty"; return false; }
+            if (string.IsNullOrWhiteSpace(json)) { error = "server question response is empty"; return false; }
 
             try
             {
@@ -187,7 +251,7 @@ namespace KnowledgeWarrior.Data
 
             if (bank?.questions == null || bank.questions.Length == 0)
             {
-                error = "no 'questions' array found";
+                error = "no approved questions found on server";
                 return false;
             }
 
@@ -204,33 +268,20 @@ namespace KnowledgeWarrior.Data
                 }
                 if (!seenIds.Add(q.id))
                 {
-                    Debug.LogWarning($"[QuestionManager] Skipping duplicate id '{q.id}'");
                     continue;
                 }
                 string normText = NormalizeQuestionText(q.question);
                 if (!string.IsNullOrEmpty(normText) && !seenNormalizedTexts.Add(normText))
                 {
-                    Debug.LogWarning($"[QuestionManager] Skipping duplicate question text '{q.id}'");
                     continue;
                 }
                 valid.Add(q);
             }
 
-            if (valid.Count == 0) { error = "no valid questions"; return false; }
+            if (valid.Count == 0) { error = "no valid approved questions available"; return false; }
 
             bank.questions = valid.ToArray();
             error = null;
-            return true;
-        }
-
-        private bool TryApply(string json, string source)
-        {
-            if (!TryParse(json, out var bank, out var error))
-            {
-                Debug.LogWarning($"[QuestionManager] {source} questions invalid: {error}");
-                return false;
-            }
-            Apply(bank, source);
             return true;
         }
 
@@ -238,6 +289,7 @@ namespace KnowledgeWarrior.Data
         {
             _questions.Clear();
             _questions.AddRange(bank.questions);
+            SyncSeenNormalizedTextsWithLoadedBank();
             _decks.Clear();
             BankVersion = bank.version;
             BankVersionHash = bank.versionHash;
@@ -245,7 +297,7 @@ namespace KnowledgeWarrior.Data
             string versionLabel = !string.IsNullOrEmpty(BankVersionHash)
                 ? $"hash {BankVersionHash.Substring(0, Math.Min(8, BankVersionHash.Length))}"
                 : $"v{BankVersion}";
-            Debug.Log($"[QuestionManager] Loaded {_questions.Count} questions ({versionLabel}) from {source}.");
+            Debug.Log($"[QuestionManager] Loaded {_questions.Count} live questions ({versionLabel}, {_seenQuestionIds.Count} previously seen excluded) from {source}.");
             OnQuestionsLoaded?.Invoke();
         }
 

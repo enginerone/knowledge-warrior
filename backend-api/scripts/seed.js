@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
+const expandedQuestions = require('../data/expandedQuestions');
+const { isDuplicateQuestion } = require('../services/questionDeduplicator');
 
 function getBadgeTier(level) {
   if (level <= 15) return 'Beginner';
@@ -19,26 +21,34 @@ async function seed() {
 
     const adminCheck = await client.query('SELECT id FROM users WHERE username = $1', ['admin']);
     if (adminCheck.rows.length === 0) {
-      const passwordHash = await bcrypt.hash('AdminPassword123!', 10);
+      const initialAdminPassword = process.env.ADMIN_INITIAL_PASSWORD || 'AdminPassword123!';
+      const initialAdminEmail = process.env.ADMIN_EMAIL || 'admin@knowledgewarrior.com';
+      const passwordHash = await bcrypt.hash(initialAdminPassword, 10);
       await client.query(
         `INSERT INTO users (username, email, password_hash, role, total_xp, current_level)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        ['admin', 'admin@knowledgewarrior.com', passwordHash, 'admin', 9999, 50]
+        ['admin', initialAdminEmail, passwordHash, 'admin', 9999, 50]
       );
-      console.log('  👑 Created default admin user: admin / AdminPassword123!');
+      console.log('  👑 Created default admin user account.');
     } else {
       console.log('  ℹ️ Admin user already exists.');
     }
 
-    const questionsPath = path.resolve(__dirname, '../../unity-client/Assets/Data/questions.json');
-    if (!fs.existsSync(questionsPath)) {
-      console.warn('  ⚠️ unity-client/Assets/Data/questions.json not found, skipping questions seeding.');
-      await client.query('COMMIT');
-      return;
+    const unityQuestionsPath = path.resolve(__dirname, '../../unity-client/Assets/Data/questions.json');
+    const bundledQuestionsPath = path.resolve(__dirname, '../data/baseQuestions.json');
+    const resolvedQuestionsPath = fs.existsSync(unityQuestionsPath)
+      ? unityQuestionsPath
+      : (fs.existsSync(bundledQuestionsPath) ? bundledQuestionsPath : null);
+
+    let baseQuestions = [];
+    if (resolvedQuestionsPath) {
+      const data = JSON.parse(fs.readFileSync(resolvedQuestionsPath, 'utf8'));
+      baseQuestions = data.questions || [];
+    } else {
+      console.warn('  ⚠️ Base questions.json not found, seeding expanded curriculum questions only.');
     }
 
-    const data = JSON.parse(fs.readFileSync(questionsPath, 'utf8'));
-    const rawQuestions = data.questions || [];
+    const rawQuestions = [...baseQuestions, ...expandedQuestions];
 
     const biomeMap = new Map();
     const topicMap = new Map();
@@ -79,6 +89,9 @@ async function seed() {
 
     console.log(`  🗺️ Seeded ${biomeMap.size} biomes and ${topicMap.size} topics.`);
 
+    const existingRowsRes = await client.query('SELECT id, question_text FROM questions');
+    const knownTexts = existingRowsRes.rows.map((r) => r.question_text);
+
     let insertedQuestions = 0;
     for (const q of rawQuestions) {
       const subjectName = q.subject || 'General';
@@ -88,11 +101,15 @@ async function seed() {
       const topicId = topicMap.get(topicKey);
 
       const existing = await client.query(
-        'SELECT id FROM questions WHERE question_text = $1',
+        'SELECT id FROM questions WHERE LOWER(question_text) = LOWER($1)',
         [q.question]
       );
 
       if (existing.rows.length === 0) {
+        if (isDuplicateQuestion(q.question, knownTexts, 0.85)) {
+          continue;
+        }
+        knownTexts.push(q.question);
         await client.query(
           `INSERT INTO questions (
             topic_id, question_type, question_text, options, correct_index, explanation, difficulty, xp_reward, status, approved_at
@@ -135,73 +152,44 @@ async function seed() {
     console.log(`  ❓ Seeded/updated questions (${insertedQuestions} new).`);
 
     const sampleWarriors = [
-      {
-        username: 'Aria_Bitweaver',
-        email: 'aria@warrior.dev',
-        xp: 3450,
-        level: 16,
-        subjects: { Programming: 1, Databases: 10, Networking: 16, 'Web Development': 1, Cybersecurity: 31, 'Computer Systems': 1 },
-      },
-      {
-        username: 'ProfessorByte',
-        email: 'byte@warrior.dev',
-        xp: 5980,
-        level: 40,
-        subjects: { Programming: 6, Databases: 40, Networking: 1, 'Web Development': 16, Cybersecurity: 1, 'Computer Systems': 61 },
-      },
-      {
-        username: 'NullSlayer99',
-        email: 'nullslayer@warrior.dev',
-        xp: 2640,
-        level: 10,
-        subjects: { Programming: 1, Databases: 1, Networking: 10, 'Web Development': 1, Cybersecurity: 1, 'Computer Systems': 1 },
-      },
-      {
-        username: 'SyntaxKnight',
-        email: 'knight@warrior.dev',
-        xp: 1890,
-        level: 6,
-        subjects: { Programming: 6, Databases: 10, Networking: 1, 'Web Development': 6, Cybersecurity: 16, 'Computer Systems': 1 },
-      },
-      {
-        username: 'BinaryApprentice',
-        email: 'apprentice@warrior.dev',
-        xp: 980,
-        level: 2,
-        subjects: { Programming: 2, Databases: 1, Networking: 2, 'Web Development': 2, Cybersecurity: 2, 'Computer Systems': 2 },
-      },
-      {
-        username: 'CipherValkyrie',
-        email: 'valkyrie@warrior.dev',
-        xp: 8200,
-        level: 65,
-        subjects: { Programming: 31, Databases: 40, Networking: 31, 'Web Development': 31, Cybersecurity: 65, 'Computer Systems': 31 },
-      },
+      { username: 'Aria_Bitweaver', email: 'aria@warrior.dev' },
+      { username: 'ProfessorByte', email: 'byte@warrior.dev' },
+      { username: 'NullSlayer99', email: 'nullslayer@warrior.dev' },
+      { username: 'SyntaxKnight', email: 'knight@warrior.dev' },
+      { username: 'BinaryApprentice', email: 'apprentice@warrior.dev' },
+      { username: 'CipherValkyrie', email: 'valkyrie@warrior.dev' },
+    ];
+
+    const defaultSubjects = [
+      'Programming',
+      'Web Development',
+      'Networking',
+      'Databases',
+      'Cybersecurity',
+      'Computer Systems',
     ];
 
     const defaultPlayerHash = await bcrypt.hash('Warrior123!', 10);
     for (const w of sampleWarriors) {
       const userRes = await client.query(
-        `INSERT INTO users (username, email, password_hash, role, total_xp, current_level, last_synced_at)
-         VALUES ($1, $2, $3, 'player', $4, $5, NOW())
+        `INSERT INTO users (username, email, password_hash, role, total_xp, current_level, battles_won, battles_lost, last_synced_at)
+         VALUES ($1, $2, $3, 'player', 0, 1, 0, 0, NOW())
          ON CONFLICT (username) DO UPDATE SET last_synced_at = NOW()
          RETURNING id`,
-        [w.username, w.email, defaultPlayerHash, w.xp, w.level]
+        [w.username, w.email, defaultPlayerHash]
       );
       const userId = userRes.rows[0].id;
 
-      for (const [subj, lv] of Object.entries(w.subjects)) {
-        const subjXp = Math.max(120, lv * 140);
-        const badge = getBadgeTier(lv);
+      for (const subj of defaultSubjects) {
         await client.query(
-          `INSERT INTO user_subject_progress (user_id, subject, subject_level, subject_xp, badge_tier, updated_at)
-           VALUES ($1, $2, $3, $4, $5, NOW())
+          `INSERT INTO user_subject_progress (user_id, subject, subject_level, subject_xp, subject_points, badge_tier, updated_at)
+           VALUES ($1, $2, 1, 0, 0, 'Beginner', NOW())
            ON CONFLICT (user_id, subject) DO NOTHING`,
-          [userId, subj, lv, subjXp, badge]
+          [userId, subj]
         );
       }
     }
-    console.log('  🏆 Ensured sample leaderboard & subject PvP warriors exist (password: Warrior123!).');
+    console.log('  🏆 Ensured sample warriors start at Subject Level 1 across all categories (password: Warrior123!).');
 
     await client.query('COMMIT');
     console.log('✅ Seeding completed successfully.');

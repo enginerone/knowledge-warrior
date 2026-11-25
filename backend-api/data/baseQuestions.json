@@ -1,0 +1,560 @@
+{
+  "version": 2,
+  "updatedAt": "2026-10-29T10:55:00Z",
+  "questions": [
+    {
+      "id": "prog-001",
+      "subject": "Programming",
+      "topic": "Data Types",
+      "difficulty": 1,
+      "questionType": "multiple_choice",
+      "question": "Which data type is best for storing a decimal value such as 3.14?",
+      "choices": ["int", "bool", "float", "char"],
+      "correctIndex": 2,
+      "explanation": "Floating-point types such as float and double store numbers with fractional parts, whereas int stores whole numbers."
+    },
+    {
+      "id": "prog-002",
+      "subject": "Programming",
+      "topic": "Control Flow",
+      "difficulty": 1,
+      "questionType": "true_false",
+      "question": "TRUE OR FALSE: A 'while' loop continues executing its code block as long as its condition evaluates to true.",
+      "choices": ["TRUE — It repeats while the condition is true", "FALSE — It executes only once", "FALSE — It only runs when the condition is false", "FALSE — It is used only for declaring variables"],
+      "correctIndex": 0,
+      "explanation": "A while loop checks its condition before every iteration and repeats while the condition remains true."
+    },
+    {
+      "id": "prog-003",
+      "subject": "Programming",
+      "topic": "Arrays",
+      "difficulty": 1,
+      "questionType": "fill_blank",
+      "question": "FILL IN THE BLANK: In C#, Java, Python, and JavaScript, the first element of an array `items[___]` is located at index ___.",
+      "choices": ["1", "0", "-1", "length"],
+      "correctIndex": 1,
+      "explanation": "Zero-based indexing places the very first element of an array at index 0."
+    },
+    {
+      "id": "prog-004",
+      "subject": "Programming",
+      "topic": "Operators",
+      "difficulty": 2,
+      "questionType": "fill_blank",
+      "question": "CODE COMPLETION: What value is stored in `result` after running `int result = 17 % 5;`?",
+      "choices": ["3", "2", "3.4", "12"],
+      "correctIndex": 1,
+      "explanation": "The modulo operator (%) returns the integer remainder of dividing 17 by 5, which is 2."
+    },
+    {
+      "id": "prog-005",
+      "subject": "Programming",
+      "topic": "Functions",
+      "difficulty": 2,
+      "questionType": "multiple_choice",
+      "question": "What do we call a function that calls itself to solve a smaller instance of the same problem?",
+      "choices": ["Iterative function", "Recursive function", "Lambda function", "Static function"],
+      "correctIndex": 1,
+      "explanation": "Recursion occurs when a function calls itself until it reaches a terminating base case."
+    },
+    {
+      "id": "prog-006",
+      "subject": "Programming",
+      "topic": "OOP",
+      "difficulty": 2,
+      "questionType": "multiple_choice",
+      "question": "Which object-oriented principle bundles internal data with methods and restricts direct outside access?",
+      "choices": ["Inheritance", "Polymorphism", "Encapsulation", "Compilation"],
+      "correctIndex": 2,
+      "explanation": "Encapsulation hides internal state using private fields and exposes controlled access through public methods or properties."
+    },
+    {
+      "id": "prog-007",
+      "subject": "Programming",
+      "topic": "OOP",
+      "difficulty": 2,
+      "questionType": "true_false",
+      "question": "TRUE OR FALSE: A class 'Dog' that extends a base class 'Animal' demonstrates Inheritance.",
+      "choices": ["TRUE — Dog inherits members from Animal", "FALSE — This is called Compilation", "FALSE — Subclasses cannot reuse parent methods", "FALSE — Inheritance only applies to interfaces"],
+      "correctIndex": 0,
+      "explanation": "Inheritance allows a child class to reuse and specialize behaviors defined in a parent class."
+    },
+    {
+      "id": "prog-008",
+      "subject": "Programming",
+      "topic": "Algorithms",
+      "difficulty": 3,
+      "questionType": "ordering",
+      "question": "SEQUENCE ORDERING: Which option lists the correct step-by-step execution order of Binary Search on a sorted array?",
+      "choices": [
+        "1. Compare middle element -> 2. Narrow to left or right half -> 3. Repeat until found or range is empty",
+        "1. Sort the array -> 2. Check every element from index 0 -> 3. Swap adjacent items",
+        "1. Hash the key -> 2. Jump to bucket -> 3. Linear scan",
+        "1. Pick random index -> 2. Delete element -> 3. Rebuild array"
+      ],
+      "correctIndex": 0,
+      "explanation": "Binary search checks the midpoint first, eliminates half of the remaining search range each step, and runs in O(log n) time."
+    },
+    {
+      "id": "prog-009",
+      "subject": "Programming",
+      "topic": "Data Structures",
+      "difficulty": 3,
+      "questionType": "multiple_choice",
+      "question": "Which data structure operates strictly on the Last-In, First-Out (LIFO) principle?",
+      "choices": ["Queue", "Stack", "Binary Search Tree", "Hash Table"],
+      "correctIndex": 1,
+      "explanation": "A stack pushes and pops elements from the top, so the most recently added item is removed first."
+    },
+    {
+      "id": "prog-010",
+      "subject": "Programming",
+      "topic": "Debugging",
+      "difficulty": 3,
+      "questionType": "spot_bug",
+      "question": "SPOT THE BUG: Which line of C# code will throw a NullReferenceException at runtime?",
+      "choices": [
+        "Line 1: int bonus = 10 * 2;",
+        "Line 2: string title = null; int len = title.Length;",
+        "Line 3: bool isReady = (bonus > 5);",
+        "Line 4: Console.WriteLine(isReady);"
+      ],
+      "correctIndex": 1,
+      "explanation": "Accessing the Length property on a string variable that holds null triggers a NullReferenceException."
+    },
+    {
+      "id": "prog-011",
+      "subject": "Programming",
+      "topic": "Concurrency & Memory",
+      "difficulty": 4,
+      "questionType": "spot_bug",
+      "question": "EXPERT BUG HUNTER: In a multi-threaded bank transfer, which pattern causes a classic Deadlock?",
+      "choices": [
+        "Thread A locks Account 1 then Account 2, while Thread B locks Account 2 then Account 1",
+        "Both threads acquire locks in the exact same global Account ID order",
+        "Using an atomic Compare-And-Swap operation on a single balance integer",
+        "Reading immutable configuration values without a mutex"
+      ],
+      "correctIndex": 0,
+      "explanation": "Circular lock acquisition order causes Thread A and Thread B to wait on each other forever, producing a deadlock."
+    },
+    {
+      "id": "prog-012",
+      "subject": "Programming",
+      "topic": "Dynamic Programming",
+      "difficulty": 4,
+      "questionType": "multiple_choice",
+      "question": "Which two properties must a problem have for Dynamic Programming to be effective?",
+      "choices": [
+        "Overlapping subproblems and optimal substructure",
+        "Greedy choice property and constant memory",
+        "Tail recursion and static typing",
+        "Amortized hashing and bipartite matching"
+      ],
+      "correctIndex": 0,
+      "explanation": "Dynamic programming caches solutions to overlapping subproblems and combines optimal sub-solutions via optimal substructure."
+    },
+    {
+      "id": "web-001",
+      "subject": "Web Development",
+      "topic": "HTML",
+      "difficulty": 1,
+      "questionType": "fill_blank",
+      "question": "FILL IN THE BLANK: Which HTML element `<___ href=\"https://example.com\">` creates a clickable hyperlink?",
+      "choices": ["link", "a", "href", "url"],
+      "correctIndex": 1,
+      "explanation": "The anchor element <a> defines a hyperlink, while <link> links external stylesheets in the document head."
+    },
+    {
+      "id": "web-002",
+      "subject": "Web Development",
+      "topic": "CSS",
+      "difficulty": 1,
+      "questionType": "multiple_choice",
+      "question": "What does the acronym CSS stand for in web development?",
+      "choices": ["Computer Style Sheets", "Cascading Style Sheets", "Creative Styling System", "Colorful Style Syntax"],
+      "correctIndex": 1,
+      "explanation": "CSS stands for Cascading Style Sheets, which controls layout, colors, and typography."
+    },
+    {
+      "id": "web-003",
+      "subject": "Web Development",
+      "topic": "JavaScript",
+      "difficulty": 2,
+      "questionType": "fill_blank",
+      "question": "CODE COMPLETION: In modern JavaScript, `___ API_URL = '/api/v1';` declares a constant reference that cannot be reassigned.",
+      "choices": ["var", "let", "const", "final"],
+      "correctIndex": 2,
+      "explanation": "The const keyword creates a block-scoped binding whose reference cannot be reassigned."
+    },
+    {
+      "id": "web-004",
+      "subject": "Web Development",
+      "topic": "HTTP",
+      "difficulty": 2,
+      "questionType": "multiple_choice",
+      "question": "Which HTTP response status code indicates that the requested resource was Not Found?",
+      "choices": ["200 OK", "301 Moved Permanently", "404 Not Found", "500 Internal Server Error"],
+      "correctIndex": 2,
+      "explanation": "Status code 404 indicates the server could not find a resource matching the requested URL."
+    },
+    {
+      "id": "web-005",
+      "subject": "Web Development",
+      "topic": "HTTP",
+      "difficulty": 2,
+      "questionType": "true_false",
+      "question": "TRUE OR FALSE: In REST API design, the HTTP POST method is normally used to create a new resource on the server.",
+      "choices": ["TRUE — POST submits a payload to create a new resource", "FALSE — POST only deletes records", "FALSE — GET is required for creating records", "FALSE — HEAD uploads binary files"],
+      "correctIndex": 0,
+      "explanation": "POST sends a request body to create a subordinate resource, whereas GET only retrieves data."
+    },
+    {
+      "id": "web-006",
+      "subject": "Web Development",
+      "topic": "APIs",
+      "difficulty": 3,
+      "questionType": "ordering",
+      "question": "SEQUENCE ORDERING: Choose the correct lifecycle order of an authenticated `fetch()` API call in a browser single-page app.",
+      "choices": [
+        "1. Attach Bearer JWT header -> 2. Await HTTP response -> 3. Parse JSON body -> 4. Update UI state",
+        "1. Parse JSON body -> 2. Update UI state -> 3. Send TCP SYN -> 4. Attach header",
+        "1. Render DOM -> 2. Delete JWT -> 3. Call SQL directly from CSS -> 4. Close browser",
+        "1. Restart server -> 2. Compile HTML -> 3. Flush DNS -> 4. Parse cookies"
+      ],
+      "correctIndex": 0,
+      "explanation": "The client attaches the Authorization header, awaits the network response, parses the JSON payload, and updates component state."
+    },
+    {
+      "id": "web-007",
+      "subject": "Web Development",
+      "topic": "Web Security & Performance",
+      "difficulty": 4,
+      "questionType": "spot_bug",
+      "question": "EXPERT BUG HUNTER: Which React/DOM snippet introduces a Cross-Site Scripting (XSS) vulnerability?",
+      "choices": [
+        "element.textContent = untrustedUserComment;",
+        "element.innerHTML = untrustedUserComment;",
+        "const safeText = encodeURIComponent(untrustedUserComment);",
+        "res.setHeader('Content-Security-Policy', \"default-src 'self'\");"
+      ],
+      "correctIndex": 1,
+      "explanation": "Assigning unsanitized user input directly to innerHTML executes embedded <script> or onerror payloads in the victim's browser."
+    },
+    {
+      "id": "net-001",
+      "subject": "Networking",
+      "topic": "Basics",
+      "difficulty": 1,
+      "questionType": "multiple_choice",
+      "question": "What does 'IP' stand for in the term 'IP address'?",
+      "choices": ["Internet Protocol", "Internal Port", "Internet Provider", "Information Packet"],
+      "correctIndex": 0,
+      "explanation": "IP stands for Internet Protocol, which governs logical addressing and packet routing across networks."
+    },
+    {
+      "id": "net-002",
+      "subject": "Networking",
+      "topic": "DNS",
+      "difficulty": 1,
+      "questionType": "true_false",
+      "question": "TRUE OR FALSE: The primary role of DNS is to translate human-readable domain names into numerical IP addresses.",
+      "choices": ["TRUE — DNS resolves domain names to IP addresses", "FALSE — DNS physically crimps Ethernet cables", "FALSE — DNS replaces the CPU cooler", "FALSE — DNS only works offline"],
+      "correctIndex": 0,
+      "explanation": "The Domain Name System resolves hostnames into IPv4 or IPv6 addresses so packets can reach the destination server."
+    },
+    {
+      "id": "net-003",
+      "subject": "Networking",
+      "topic": "Hardware",
+      "difficulty": 2,
+      "questionType": "multiple_choice",
+      "question": "Which networking device forwards data packets between separate IP networks?",
+      "choices": ["Layer 2 Switch", "Passive Hub", "Router", "Signal Repeater"],
+      "correctIndex": 2,
+      "explanation": "A router inspects Layer 3 IP headers and forwards packets between distinct networks such as a local LAN and the wide-area internet."
+    },
+    {
+      "id": "net-004",
+      "subject": "Networking",
+      "topic": "Protocols",
+      "difficulty": 2,
+      "questionType": "ordering",
+      "question": "SEQUENCE ORDERING: What is the exact 3-way handshake sequence used by TCP to establish a reliable connection?",
+      "choices": [
+        "1. Client sends SYN -> 2. Server replies SYN-ACK -> 3. Client sends ACK",
+        "1. Server sends FIN -> 2. Client sends RST -> 3. Server sends SYN",
+        "1. Client sends HTTP GET -> 2. Server sends DNS -> 3. Client sends ARP",
+        "1. Client broadcasts DHCP -> 2. Router drops packet -> 3. Server sends ICMP"
+      ],
+      "correctIndex": 0,
+      "explanation": "TCP synchronizes sequence numbers using SYN, SYN-ACK, and ACK before transmitting application data."
+    },
+    {
+      "id": "net-005",
+      "subject": "Networking",
+      "topic": "Ports",
+      "difficulty": 3,
+      "questionType": "fill_blank",
+      "question": "FILL IN THE BLANK: Encrypted HTTPS web traffic listens on default TCP port ___.",
+      "choices": ["21", "80", "443", "3306"],
+      "correctIndex": 2,
+      "explanation": "HTTPS uses TCP port 443 by default, whereas unencrypted HTTP uses port 80."
+    },
+    {
+      "id": "net-006",
+      "subject": "Networking",
+      "topic": "OSI Model",
+      "difficulty": 3,
+      "questionType": "multiple_choice",
+      "question": "How many layers make up the standard OSI networking reference model?",
+      "choices": ["4 layers", "5 layers", "7 layers", "9 layers"],
+      "correctIndex": 2,
+      "explanation": "The OSI model defines 7 layers: Physical, Data Link, Network, Transport, Session, Presentation, and Application."
+    },
+    {
+      "id": "net-007",
+      "subject": "Networking",
+      "topic": "BGP & Subnetting",
+      "difficulty": 4,
+      "questionType": "fill_blank",
+      "question": "EXPERT SUBNETTING: How many usable host IPv4 addresses exist inside a `/26` CIDR subnet?",
+      "choices": ["30 usable hosts", "62 usable hosts", "64 usable hosts", "126 usable hosts"],
+      "correctIndex": 1,
+      "explanation": "A /26 subnet has 6 host bits (2^6 = 64 total addresses); subtracting the network and broadcast addresses leaves 62 usable hosts."
+    },
+    {
+      "id": "db-001",
+      "subject": "Databases",
+      "topic": "SQL",
+      "difficulty": 1,
+      "questionType": "fill_blank",
+      "question": "SQL COMPLETION: `___ username, total_xp FROM users;` retrieves columns from a database table.",
+      "choices": ["GET", "SELECT", "FETCH", "OPEN"],
+      "correctIndex": 1,
+      "explanation": "The SELECT statement reads and projects rows from one or more tables in SQL."
+    },
+    {
+      "id": "db-002",
+      "subject": "Databases",
+      "topic": "Keys",
+      "difficulty": 1,
+      "questionType": "true_false",
+      "question": "TRUE OR FALSE: A Primary Key column must contain unique, non-null values for every row in a relational table.",
+      "choices": ["TRUE — Primary keys uniquely identify each row and cannot be NULL", "FALSE — Primary keys allow duplicate values", "FALSE — Primary keys are only used for sorting text", "FALSE — A table can have 10 primary keys"],
+      "correctIndex": 0,
+      "explanation": "Entity integrity requires every primary key value to be unique and non-null."
+    },
+    {
+      "id": "db-003",
+      "subject": "Databases",
+      "topic": "Keys",
+      "difficulty": 2,
+      "questionType": "multiple_choice",
+      "question": "A column in one table that references the Primary Key of another table is called a...",
+      "choices": ["Super key", "Candidate key", "Foreign key", "Secondary index"],
+      "correctIndex": 2,
+      "explanation": "A foreign key enforces referential integrity between a child table and a parent table."
+    },
+    {
+      "id": "db-004",
+      "subject": "Databases",
+      "topic": "SQL",
+      "difficulty": 3,
+      "questionType": "ordering",
+      "question": "SEQUENCE ORDERING: What is the logical query processing order of clauses in a SQL SELECT statement?",
+      "choices": [
+        "1. FROM / JOIN -> 2. WHERE -> 3. GROUP BY -> 4. HAVING -> 5. SELECT -> 6. ORDER BY",
+        "1. SELECT -> 2. ORDER BY -> 3. FROM -> 4. WHERE -> 5. GROUP BY",
+        "1. HAVING -> 2. WHERE -> 3. FROM -> 4. SELECT",
+        "1. ORDER BY -> 2. LIMIT -> 3. GROUP BY -> 4. FROM"
+      ],
+      "correctIndex": 0,
+      "explanation": "SQL engines evaluate FROM and JOIN first, filter rows with WHERE, aggregate with GROUP BY, filter groups with HAVING, project SELECT, and sort with ORDER BY."
+    },
+    {
+      "id": "db-005",
+      "subject": "Databases",
+      "topic": "Joins",
+      "difficulty": 3,
+      "questionType": "multiple_choice",
+      "question": "Which SQL JOIN returns only the rows that have matching values in both joined tables?",
+      "choices": ["LEFT OUTER JOIN", "RIGHT OUTER JOIN", "INNER JOIN", "FULL OUTER JOIN"],
+      "correctIndex": 2,
+      "explanation": "INNER JOIN returns only rows that satisfy the join predicate in both tables."
+    },
+    {
+      "id": "db-006",
+      "subject": "Databases",
+      "topic": "Transactions & Isolation",
+      "difficulty": 4,
+      "questionType": "spot_bug",
+      "question": "EXPERT BUG HUNTER: Which PostgreSQL transaction flaw occurs when two concurrent transactions read the same balance and both overwrite it without locking?",
+      "choices": [
+        "Lost Update anomaly (prevented by SELECT ... FOR UPDATE or Serializable isolation)",
+        "B-Tree index bloat caused by VACUUM",
+        "Foreign key cascade deletion on a child table",
+        "Normalizing a table to Third Normal Form (3NF)"
+      ],
+      "correctIndex": 0,
+      "explanation": "When two transactions read-modify-write the same row concurrently without row locking or serializable isolation, the first commit is overwritten (Lost Update)."
+    },
+    {
+      "id": "sec-001",
+      "subject": "Cybersecurity",
+      "topic": "Passwords",
+      "difficulty": 1,
+      "questionType": "multiple_choice",
+      "question": "Which of the following is the strongest and most resilient password against brute-force attacks?",
+      "choices": ["password123", "Warrior2026", "qwertyuiop", "T7#v!pL9@xQ2$mK8"],
+      "correctIndex": 3,
+      "explanation": "High-entropy passphrases mixing length, uppercase, lowercase, digits, and symbols resist dictionary and brute-force cracking."
+    },
+    {
+      "id": "sec-002",
+      "subject": "Cybersecurity",
+      "topic": "Social Engineering",
+      "difficulty": 1,
+      "questionType": "true_false",
+      "question": "TRUE OR FALSE: A deceptive email impersonating your bank to steal your login credentials is a Phishing attack.",
+      "choices": ["TRUE — Impersonation messages designed to steal credentials are Phishing", "FALSE — That is called Disk Defragmentation", "FALSE — Phishing only happens on calculators", "FALSE — It is a hardware upgrade"],
+      "correctIndex": 0,
+      "explanation": "Phishing uses social engineering to trick users into revealing sensitive credentials or installing malware."
+    },
+    {
+      "id": "sec-003",
+      "subject": "Cybersecurity",
+      "topic": "Authentication",
+      "difficulty": 2,
+      "questionType": "multiple_choice",
+      "question": "Requiring both a secret password and a 6-digit one-time code sent to your email or phone is known as...",
+      "choices": ["Single Sign-On (SSO)", "Multi-Factor / Two-Factor Authentication (2FA)", "Plaintext Hashing", "Port Forwarding"],
+      "correctIndex": 1,
+      "explanation": "Two-factor authentication combines something you know (password) with something you possess (OTP device/inbox)."
+    },
+    {
+      "id": "sec-004",
+      "subject": "Cybersecurity",
+      "topic": "Web Attacks",
+      "difficulty": 3,
+      "questionType": "spot_bug",
+      "question": "SPOT THE BUG: Which backend database query is vulnerable to SQL Injection?",
+      "choices": [
+        "db.query(`SELECT * FROM users WHERE username = '${req.body.user}'`)",
+        "db.query('SELECT * FROM users WHERE username = $1', [req.body.user])",
+        "bcrypt.compare(password, user.password_hash)",
+        "jwt.verify(token, process.env.JWT_SECRET)"
+      ],
+      "correctIndex": 0,
+      "explanation": "String concatenation or template interpolation of user input directly into SQL text allows attackers to inject arbitrary SQL commands."
+    },
+    {
+      "id": "sec-005",
+      "subject": "Cybersecurity",
+      "topic": "Cryptography",
+      "difficulty": 3,
+      "questionType": "multiple_choice",
+      "question": "Why must user passwords be stored using a salted one-way hash such as bcrypt or Argon2?",
+      "choices": [
+        "Salted hashes cannot be reversed into plaintext or defeated by precomputed rainbow tables",
+        "Hashes compress the database size by 99%",
+        "Hashes allow administrators to read every user's password in plain English",
+        "Salted hashes bypass the need for HTTPS"
+      ],
+      "correctIndex": 0,
+      "explanation": "A unique salt per password prevents rainbow-table lookups, and slow one-way hashing resists offline GPU cracking if the database is leaked."
+    },
+    {
+      "id": "sec-006",
+      "subject": "Cybersecurity",
+      "topic": "Zero-Day & Exploit Mitigation",
+      "difficulty": 4,
+      "questionType": "ordering",
+      "question": "EXPERT INCIDENT RESPONSE: Order the standard NIST Incident Response lifecycle phases from start to finish.",
+      "choices": [
+        "1. Preparation -> 2. Detection & Analysis -> 3. Containment, Eradication & Recovery -> 4. Post-Incident Activity",
+        "1. Delete Logs -> 2. Unplug Monitor -> 3. Pay Ransom -> 4. Ignore Alert",
+        "1. Post-Incident Activity -> 2. Preparation -> 3. Eradication -> 4. Detection",
+        "1. Containment -> 2. Compile Kernel -> 3. Format BIOS -> 4. Preparation"
+      ],
+      "correctIndex": 0,
+      "explanation": "The NIST SP 800-61 incident response cycle proceeds through Preparation, Detection and Analysis, Containment/Eradication/Recovery, and Post-Incident lessons learned."
+    },
+    {
+      "id": "hw-001",
+      "subject": "Computer Systems",
+      "topic": "Hardware",
+      "difficulty": 1,
+      "questionType": "multiple_choice",
+      "question": "Which hardware component fetches, decodes, and executes program instructions as the brain of the computer?",
+      "choices": ["RAM", "CPU (Central Processing Unit)", "NVMe SSD", "Power Supply"],
+      "correctIndex": 1,
+      "explanation": "The CPU executes arithmetic, logic, and control instructions for running programs."
+    },
+    {
+      "id": "hw-002",
+      "subject": "Computer Systems",
+      "topic": "Memory",
+      "difficulty": 1,
+      "questionType": "true_false",
+      "question": "TRUE OR FALSE: Data stored in volatile RAM is erased as soon as the computer loses electrical power.",
+      "choices": ["TRUE — RAM is volatile and loses data when powered off", "FALSE — RAM stores files permanently like an SSD", "FALSE — RAM is located inside the monitor cable", "FALSE — Turning off power doubles RAM capacity"],
+      "correctIndex": 0,
+      "explanation": "Volatile memory (DRAM/SRAM) requires continuous power to retain bits, unlike non-volatile SSD or HDD storage."
+    },
+    {
+      "id": "hw-003",
+      "subject": "Computer Systems",
+      "topic": "Number Systems",
+      "difficulty": 2,
+      "questionType": "fill_blank",
+      "question": "BINARY CONVERSION: The 4-bit binary value `1010` equals ___ in base-10 decimal.",
+      "choices": ["8", "10", "12", "14"],
+      "correctIndex": 1,
+      "explanation": "In binary positional notation, 1010 equals (1 * 8) + (0 * 4) + (1 * 2) + (0 * 1) = 10."
+    },
+    {
+      "id": "hw-004",
+      "subject": "Computer Systems",
+      "topic": "Number Systems",
+      "difficulty": 2,
+      "questionType": "multiple_choice",
+      "question": "How many binary bits make up 1 standard byte?",
+      "choices": ["4 bits", "8 bits", "16 bits", "32 bits"],
+      "correctIndex": 1,
+      "explanation": "One byte consists of 8 bits and can represent 256 distinct values (0 through 255)."
+    },
+    {
+      "id": "hw-005",
+      "subject": "Computer Systems",
+      "topic": "Operating Systems",
+      "difficulty": 3,
+      "questionType": "ordering",
+      "question": "SEQUENCE ORDERING: Order the memory hierarchy from fastest (smallest latency) to slowest (largest capacity).",
+      "choices": [
+        "1. CPU Registers -> 2. L1/L2/L3 Cache -> 3. Main RAM -> 4. NVMe SSD Storage",
+        "1. NVMe SSD Storage -> 2. Main RAM -> 3. CPU Registers -> 4. L1 Cache",
+        "1. Main RAM -> 2. Cloud Backup -> 3. CPU Registers -> 4. L1 Cache",
+        "1. Optical DVD -> 2. CPU Registers -> 3. L3 Cache -> 4. RAM"
+      ],
+      "correctIndex": 0,
+      "explanation": "CPU registers operate in sub-nanoseconds, followed by SRAM caches (L1/L2/L3), DRAM main memory, and non-volatile SSD storage."
+    },
+    {
+      "id": "hw-006",
+      "subject": "Computer Systems",
+      "topic": "Architecture & Pipelining",
+      "difficulty": 4,
+      "questionType": "spot_bug",
+      "question": "EXPERT ARCHITECTURE: What hazard occurs in a pipelined CPU when an instruction depends on the result of a previous instruction still in the Execution stage?",
+      "choices": [
+        "Data Hazard (Read-After-Write / RAW dependency, mitigated by forwarding or pipeline stall)",
+        "Thermal paste evaporation in the BIOS",
+        "IPv6 packet fragmentation on the SATA bus",
+        "HTML DOM reflow inside the Arithmetic Logic Unit"
+      ],
+      "correctIndex": 0,
+      "explanation": "A Read-After-Write (RAW) data hazard happens when an instruction tries to read a register before a prior instruction has written its result back."
+    }
+  ]
+}

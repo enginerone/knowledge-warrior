@@ -1,11 +1,19 @@
 const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
+const { authenticateToken, optionalToken } = require('../middleware/auth');
 const { normalizeQuestionText } = require('../services/questionDeduplicator');
+const {
+  countUnseenApprovedQuestions,
+  replenishSubjectTierQuestions,
+  triggerBackgroundReplenishIfLow,
+} = require('../services/questionReplenisher');
 
 const router = express.Router();
 
-// GET /api/v1/questions/biomes - List all biomes with their topics
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// GET /api/v1/questions/biomes
 router.get('/biomes', async (req, res, next) => {
   try {
     const biomesRes = await db.query(
@@ -26,8 +34,8 @@ router.get('/biomes', async (req, res, next) => {
   }
 });
 
-// GET /api/v1/questions - Fetch approved questions with filtering, deduplication & version hash
-router.get('/', async (req, res, next) => {
+// GET /api/v1/questions - Returns approved unique questions + seenQuestionIds for authenticated user
+router.get('/', optionalToken, async (req, res, next) => {
   try {
     const { subject, topic, difficulty, limit, offset } = req.query;
 
@@ -68,7 +76,7 @@ router.get('/', async (req, res, next) => {
       JOIN topics t ON q.topic_id = t.id
       JOIN biomes b ON t.biome_id = b.id
       WHERE ${conditions.join(' AND ')}
-      ORDER BY q.difficulty ASC, q.created_at ASC
+      ORDER BY b.name ASC, q.difficulty ASC, q.created_at ASC
     `;
 
     if (limit) {
@@ -94,14 +102,82 @@ router.get('/', async (req, res, next) => {
       questions.push(row);
     }
 
-    // Compute dataset version hash for client cache validation
+    let seenQuestionIds = [];
+    if (req.user && req.user.id) {
+      const seenRes = await db.query(
+        `SELECT DISTINCT question_id::text AS id
+         FROM (
+           SELECT question_id FROM user_seen_questions WHERE user_id = $1
+           UNION
+           SELECT question_id FROM progress_logs WHERE user_id = $1 AND question_id IS NOT NULL
+         ) combined`,
+        [req.user.id]
+      );
+      seenQuestionIds = seenRes.rows.map((r) => r.id);
+    }
+
     const hashData = questions.map((q) => `${q.id}:${q.approvedAt || q.createdAt}`).join('|');
     const versionHash = crypto.createHash('sha256').update(hashData).digest('hex');
 
     res.json({
       versionHash,
       count: questions.length,
+      seenQuestionIds,
       questions,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/v1/questions/mark-seen - Permanently records a question the moment it appears to a user
+router.post('/mark-seen', authenticateToken, async (req, res, next) => {
+  try {
+    const questionId = String(req.body.questionId || '').trim();
+    const subject = String(req.body.subject || '').trim();
+    const difficulty = Math.max(1, Math.min(4, parseInt(req.body.difficulty, 10) || 1));
+
+    if (!UUID_REGEX.test(questionId)) {
+      return res.status(400).json({ error: 'Valid question UUID is required.' });
+    }
+
+    await db.query(
+      `INSERT INTO user_seen_questions (user_id, question_id, seen_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (user_id, question_id) DO NOTHING`,
+      [req.user.id, questionId]
+    );
+
+    if (subject) {
+      triggerBackgroundReplenishIfLow(req.user.id, subject, difficulty);
+    }
+
+    res.json({ status: 'recorded', questionId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/v1/questions/replenish - On-demand replenishment when a subject tier runs low on unseen questions
+router.post('/replenish', authenticateToken, async (req, res, next) => {
+  try {
+    const subject = String(req.body.subject || 'Programming').trim();
+    const difficulty = Math.max(1, Math.min(4, parseInt(req.body.difficulty, 10) || 1));
+
+    let unseen = await countUnseenApprovedQuestions(req.user.id, subject, difficulty);
+    let generatedCount = 0;
+
+    if (unseen < 6) {
+      generatedCount = await replenishSubjectTierQuestions(subject, difficulty, 8);
+      unseen = await countUnseenApprovedQuestions(req.user.id, subject, difficulty);
+    }
+
+    res.json({
+      status: 'ok',
+      subject,
+      difficulty,
+      generatedCount,
+      unseenRemaining: unseen,
     });
   } catch (err) {
     next(err);
