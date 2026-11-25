@@ -19,19 +19,19 @@ async function seed() {
   try {
     await client.query('BEGIN');
 
-    const adminCheck = await client.query('SELECT id FROM users WHERE username = $1', ['admin']);
-    if (adminCheck.rows.length === 0) {
+    const adminCheck = await client.query("SELECT COUNT(*)::int AS count FROM users WHERE role = 'admin'");
+    if (adminCheck.rows[0].count === 0) {
+      const initialAdminUsername = (process.env.ADMIN_USERNAME || 'admin').trim();
       const initialAdminPassword = process.env.ADMIN_INITIAL_PASSWORD || 'AdminPassword123!';
-      const initialAdminEmail = process.env.ADMIN_EMAIL || 'admin@knowledgewarrior.com';
       const passwordHash = await bcrypt.hash(initialAdminPassword, 10);
       await client.query(
         `INSERT INTO users (username, email, password_hash, role, total_xp, current_level)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        ['admin', initialAdminEmail, passwordHash, 'admin', 9999, 50]
+         VALUES ($1, NULL, $2, $3, $4, $5)`,
+        [initialAdminUsername, passwordHash, 'admin', 9999, 50]
       );
-      console.log('  👑 Created default admin user account.');
+      console.log('  👑 Created initial single admin user account.');
     } else {
-      console.log('  ℹ️ Admin user already exists.');
+      console.log('  ℹ️ Single admin user already exists (additional admin creation strictly disallowed).');
     }
 
     const unityQuestionsPath = path.resolve(__dirname, '../../unity-client/Assets/Data/questions.json');

@@ -150,13 +150,13 @@ namespace KnowledgeWarrior.UI
             switch (page)
             {
                 case AuthPage.Register:
-                    _headerSubtitle.text = "Create your unique username and link a real email address for account recovery.";
+                    _headerSubtitle.text = "Create a unique username and link a valid Gmail account for password recovery.";
                     break;
                 case AuthPage.Login:
                     _headerSubtitle.text = "Sign in with your registered username and password.";
                     break;
                 case AuthPage.ForgotPassword:
-                    _headerSubtitle.text = "Request a 6-digit OTP to your registered email, verify it, and set a new password.";
+                    _headerSubtitle.text = "Enter your registered Gmail account to receive a 6-digit OTP and set a new password.";
                     break;
             }
         }
@@ -164,7 +164,7 @@ namespace KnowledgeWarrior.UI
         private void OnRegisterSubmit()
         {
             ApplyServerUrlIfEdited();
-            if (AuthManager.Instance == null) return;
+            if (AuthManager.Instance == null || AuthManager.Instance.IsBusy) return;
 
             string user = _regUsernameInput.text;
             string email = _regEmailInput.text;
@@ -187,6 +187,32 @@ namespace KnowledgeWarrior.UI
                 SwitchPage(AuthPage.Login, clearFeedback: false);
                 SetFeedback(msg, Green);
             });
+        }
+
+        private void OnRegUsernameEdited(string rawUsername)
+        {
+            if (string.IsNullOrWhiteSpace(rawUsername) || AuthManager.Instance == null || AuthManager.Instance.IsBusy)
+            {
+                return;
+            }
+
+            ApplyServerUrlIfEdited();
+            AuthManager.Instance.CheckUsernameAvailability(rawUsername, (available, message) =>
+            {
+                if (_registerPageRoot != null && _registerPageRoot.activeSelf && !string.IsNullOrWhiteSpace(message))
+                {
+                    SetFeedback(message, available ? Green : Red);
+                }
+            });
+        }
+
+        private void OnRegEmailEdited(string rawEmail)
+        {
+            if (string.IsNullOrWhiteSpace(rawEmail)) return;
+            if (!AuthManager.ValidateGmailAddress(rawEmail, forForgotPassword: false, out _, out string err))
+            {
+                SetFeedback(err, Red);
+            }
         }
 
         private void OnLoginSubmit()
@@ -217,7 +243,7 @@ namespace KnowledgeWarrior.UI
         private void OnSendOtpClicked()
         {
             ApplyServerUrlIfEdited();
-            if (AuthManager.Instance == null) return;
+            if (AuthManager.Instance == null || AuthManager.Instance.IsBusy) return;
             string email = _forgotEmailInput.text;
             if (_openInboxPreviewBtn != null) _openInboxPreviewBtn.gameObject.SetActive(false);
 
@@ -225,7 +251,10 @@ namespace KnowledgeWarrior.UI
             AuthManager.Instance.RequestPasswordResetOtp(email, (success, msg) =>
             {
                 SetFeedback(msg, success ? Gold : Red);
-                if (success && _openInboxPreviewBtn != null && !string.IsNullOrWhiteSpace(AuthManager.Instance.LastOtpPreviewUrl))
+                if (success &&
+                    SyncManager.IsLocalDevelopmentEnvironment &&
+                    _openInboxPreviewBtn != null &&
+                    !string.IsNullOrWhiteSpace(AuthManager.Instance.LastOtpPreviewUrl))
                 {
                     _openInboxPreviewBtn.gameObject.SetActive(true);
                 }
@@ -234,7 +263,9 @@ namespace KnowledgeWarrior.UI
 
         private void OnVerifyOtpOnlyClicked()
         {
-            if (AuthManager.Instance == null) return;
+            ApplyServerUrlIfEdited();
+            if (AuthManager.Instance == null || AuthManager.Instance.IsBusy) return;
+            SetFeedback("Verifying 6-digit OTP code...", TextSoft);
             AuthManager.Instance.VerifyPasswordResetOtp(_forgotEmailInput.text, _forgotOtpInput.text, (success, msg) =>
             {
                 SetFeedback(msg, success ? Green : Red);
@@ -243,7 +274,8 @@ namespace KnowledgeWarrior.UI
 
         private void OnResetPasswordSubmit()
         {
-            if (AuthManager.Instance == null) return;
+            ApplyServerUrlIfEdited();
+            if (AuthManager.Instance == null || AuthManager.Instance.IsBusy) return;
             string email = _forgotEmailInput.text;
             string otp = _forgotOtpInput.text;
             string newPass = _forgotNewPasswordInput.text;
@@ -264,6 +296,7 @@ namespace KnowledgeWarrior.UI
                 _loginPasswordInput.text = string.Empty;
                 _forgotOtpInput.text = string.Empty;
                 _forgotNewPasswordInput.text = string.Empty;
+                if (_openInboxPreviewBtn != null) _openInboxPreviewBtn.gameObject.SetActive(false);
 
                 SwitchPage(AuthPage.Login, clearFeedback: false);
                 SetFeedback(msg, Green);
@@ -328,16 +361,22 @@ namespace KnowledgeWarrior.UI
             loginTabBtn.onClick.AddListener(() => SwitchPage(AuthPage.Login));
 
             _feedbackText = CreateText("FeedbackText", card, "", 22, Green, TextAlignmentOptions.Center, true,
-                r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -144), new Vector2(840, 52)));
+                r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -144), new Vector2(840, 56)));
+            _feedbackText.enableAutoSizing = true;
+            _feedbackText.fontSizeMin = 15f;
+            _feedbackText.fontSizeMax = 22f;
 
             var regRt = CreateContainer("RegisterPage", card);
             _registerPageRoot = regRt.gameObject;
 
             CreateLabel("LblUser", regRt, "UNIQUE USERNAME", new Vector2(0, -206));
             _regUsernameInput = CreateInputField("RegUsername", regRt, "Enter a unique username...", false, new Vector2(0, -242), new Vector2(800, 62));
+            _regUsernameInput.characterLimit = 30;
+            _regUsernameInput.onEndEdit.AddListener(OnRegUsernameEdited);
 
-            CreateLabel("LblEmail", regRt, "REAL EMAIL ADDRESS (FOR PASSWORD RESET OTP)", new Vector2(0, -324));
-            _regEmailInput = CreateInputField("RegEmail", regRt, "Enter your registered email address...", false, new Vector2(0, -360), new Vector2(800, 62));
+            CreateLabel("LblEmail", regRt, "VALID GMAIL ADDRESS (REQUIRED FOR PASSWORD RESET OTP)", new Vector2(0, -324));
+            _regEmailInput = CreateInputField("RegEmail", regRt, "Enter your valid @gmail.com address...", false, new Vector2(0, -360), new Vector2(800, 62));
+            _regEmailInput.onEndEdit.AddListener(OnRegEmailEdited);
 
             CreateLabel("LblPass", regRt, "PASSWORD (MIN. 6 CHARACTERS)", new Vector2(0, -442));
             _regPasswordInput = CreateInputField("RegPassword", regRt, "Create a strong password...", true, new Vector2(0, -478), new Vector2(800, 62));
@@ -356,7 +395,7 @@ namespace KnowledgeWarrior.UI
             _loginPasswordInput = CreateInputField("LoginPassword", loginRt, "Enter your password...", true, new Vector2(0, -382), new Vector2(800, 64));
 
             var loginSubmitBtn = CreateButton("LoginSubmitBtn", loginRt, Green, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(0, -480), new Vector2(800, 74), "SIGN IN TO KNOWLEDGE WARRIOR", 26, DarkText, out _);
+                new Vector2(0.5f, 1), new Vector2(0, -480), new Vector2(800, 74), "SIGN IN", 26, DarkText, out _);
             loginSubmitBtn.onClick.AddListener(OnLoginSubmit);
 
             var forgotBtn = CreateButton("ForgotPasswordBtn", loginRt, Violet, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
@@ -373,8 +412,8 @@ namespace KnowledgeWarrior.UI
             var forgotRt = CreateContainer("ForgotPasswordPage", card);
             _forgotPageRoot = forgotRt.gameObject;
 
-            CreateLabel("LblForgotEmail", forgotRt, "1. REGISTERED EMAIL ADDRESS", new Vector2(0, -206));
-            _forgotEmailInput = CreateInputField("ForgotEmail", forgotRt, "Enter your registered email...", false, new Vector2(-120, -242), new Vector2(560, 60));
+            CreateLabel("LblForgotEmail", forgotRt, "1. REGISTERED GMAIL ADDRESS", new Vector2(0, -206));
+            _forgotEmailInput = CreateInputField("ForgotEmail", forgotRt, "Enter your registered @gmail.com address...", false, new Vector2(-120, -242), new Vector2(560, 60));
 
             var sendOtpBtn = CreateButton("SendOtpBtn", forgotRt, Gold, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
                 new Vector2(0.5f, 1), new Vector2(290, -242), new Vector2(220, 60), "SEND OTP", 22, DarkText, out _);
@@ -382,28 +421,33 @@ namespace KnowledgeWarrior.UI
 
             CreateLabel("LblForgotOtp", forgotRt, "2. 6-DIGIT EMAIL OTP CODE", new Vector2(0, -324));
             _forgotOtpInput = CreateInputField("ForgotOtp", forgotRt, "Enter 6-digit OTP from email...", false, new Vector2(-120, -360), new Vector2(560, 60));
+            _forgotOtpInput.contentType = TMP_InputField.ContentType.IntegerNumber;
+            _forgotOtpInput.characterLimit = 6;
 
             var verifyOtpBtn = CreateButton("VerifyOtpBtn", forgotRt, Cyan, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
                 new Vector2(0.5f, 1), new Vector2(290, -360), new Vector2(220, 60), "VERIFY OTP", 22, DarkText, out _);
             verifyOtpBtn.onClick.AddListener(OnVerifyOtpOnlyClicked);
 
-            CreateLabel("LblNewPass", forgotRt, "3. NEW PASSWORD (MIN. 6 CHARACTERS)", new Vector2(0, -442));
-            _forgotNewPasswordInput = CreateInputField("ForgotNewPass", forgotRt, "Enter your new password...", true, new Vector2(0, -478), new Vector2(800, 60));
+            CreateLabel("LblNewPass", forgotRt, "3. NEW PASSWORD (MIN. 6 CHARS, DIFFERENT FROM PREVIOUS)", new Vector2(0, -442));
+            _forgotNewPasswordInput = CreateInputField("ForgotNewPass", forgotRt, "Enter a new password different from your previous one...", true, new Vector2(0, -478), new Vector2(800, 60));
 
             var savePassBtn = CreateButton("SaveNewPassBtn", forgotRt, Green, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
                 new Vector2(0.5f, 1), new Vector2(0, -564), new Vector2(800, 70), "CHANGE PASSWORD AND RETURN TO LOGIN", 24, DarkText, out _);
             savePassBtn.onClick.AddListener(OnResetPasswordSubmit);
 
-            _openInboxPreviewBtn = CreateButton("OpenEmailInboxBtn", forgotRt, Violet, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1f), new Vector2(0, -648), new Vector2(440, 48), "OPEN EMAIL INBOX (VIEW OTP)", 19, DarkText, out _);
-            _openInboxPreviewBtn.onClick.AddListener(() =>
+            if (SyncManager.IsLocalDevelopmentEnvironment)
             {
-                if (AuthManager.Instance != null && !string.IsNullOrWhiteSpace(AuthManager.Instance.LastOtpPreviewUrl))
+                _openInboxPreviewBtn = CreateButton("OpenEmailInboxBtn", forgotRt, Violet, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
+                    new Vector2(0.5f, 1f), new Vector2(0, -648), new Vector2(460, 48), "OPEN LOCAL TEST INBOX (DEV ONLY)", 18, DarkText, out _);
+                _openInboxPreviewBtn.onClick.AddListener(() =>
                 {
-                    Application.OpenURL(AuthManager.Instance.LastOtpPreviewUrl);
-                }
-            });
-            _openInboxPreviewBtn.gameObject.SetActive(false);
+                    if (AuthManager.Instance != null && !string.IsNullOrWhiteSpace(AuthManager.Instance.LastOtpPreviewUrl))
+                    {
+                        Application.OpenURL(AuthManager.Instance.LastOtpPreviewUrl);
+                    }
+                });
+                _openInboxPreviewBtn.gameObject.SetActive(false);
+            }
 
             SwitchPage(AuthPage.Register);
         }

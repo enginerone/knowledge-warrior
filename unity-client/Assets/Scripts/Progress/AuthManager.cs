@@ -25,7 +25,7 @@ namespace KnowledgeWarrior.Progress
 
         public static AuthManager Instance { get; private set; }
 
-        [SerializeField] private int requestTimeoutSeconds = 10;
+        [SerializeField] private int requestTimeoutSeconds = 15;
 
         public bool IsAuthenticated => !string.IsNullOrWhiteSpace(Token);
         public bool IsBusy { get; private set; }
@@ -37,10 +37,161 @@ namespace KnowledgeWarrior.Progress
 
         public event Action OnAuthStateChanged;
 
+        private Coroutine _usernameCheckCoroutine;
+
         private string ApiBaseUrl =>
             SyncManager.Instance != null
                 ? SyncManager.Instance.EffectiveApiBaseUrl
                 : SyncManager.ResolveApiBaseUrl();
+
+        public static bool ValidateUsernameFormat(string rawInput, out string normalizedUsername, out string errorMessage)
+        {
+            normalizedUsername = (rawInput ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalizedUsername))
+            {
+                errorMessage = "A unique username is required.";
+                return false;
+            }
+
+            if (normalizedUsername.Length < 3 || normalizedUsername.Length > 30)
+            {
+                errorMessage = "Username must be between 3 and 30 characters long.";
+                return false;
+            }
+
+            for (int i = 0; i < normalizedUsername.Length; i++)
+            {
+                char c = normalizedUsername[i];
+                bool allowed =
+                    (c >= 'a' && c <= 'z') ||
+                    (c >= 'A' && c <= 'Z') ||
+                    (c >= '0' && c <= '9') ||
+                    c == '_' ||
+                    c == '-' ||
+                    c == '.';
+                if (!allowed)
+                {
+                    errorMessage = "Username may only contain letters, numbers, underscores, hyphens, and periods without spaces.";
+                    return false;
+                }
+            }
+
+            errorMessage = null;
+            return true;
+        }
+
+        public static bool ValidateGmailAddress(string rawInput, bool forForgotPassword, out string normalizedEmail, out string errorMessage)
+        {
+            normalizedEmail = (rawInput ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(normalizedEmail))
+            {
+                errorMessage = forForgotPassword
+                    ? "Please enter the registered @gmail.com address linked to your account."
+                    : "A valid @gmail.com address is required for registration.";
+                return false;
+            }
+
+            string[] parts = normalizedEmail.Split('@');
+            if (parts.Length != 2 || !string.Equals(parts[1], "gmail.com", StringComparison.Ordinal))
+            {
+                errorMessage = forForgotPassword
+                    ? "Only registered @gmail.com accounts are allowed in Forgot Password."
+                    : "Registration requires a valid @gmail.com account. Non-Gmail addresses are rejected.";
+                return false;
+            }
+
+            string localPart = parts[0];
+            if (localPart.Length < 6 || localPart.Length > 30)
+            {
+                errorMessage = "Invalid Gmail address. The username before @gmail.com must be between 6 and 30 characters long.";
+                return false;
+            }
+
+            if (localPart.StartsWith(".", StringComparison.Ordinal) ||
+                localPart.EndsWith(".", StringComparison.Ordinal) ||
+                localPart.Contains("..", StringComparison.Ordinal))
+            {
+                errorMessage = "Invalid Gmail address. Gmail usernames cannot start or end with a period or contain consecutive periods.";
+                return false;
+            }
+
+            int alphanumericCount = 0;
+            for (int i = 0; i < localPart.Length; i++)
+            {
+                char c = localPart[i];
+                bool isAlphaNum = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+                if (isAlphaNum)
+                {
+                    alphanumericCount++;
+                }
+                else if (c != '.')
+                {
+                    errorMessage = "Invalid Gmail address. Gmail usernames can only contain letters, numbers, and periods before @gmail.com.";
+                    return false;
+                }
+            }
+
+            if (alphanumericCount < 6)
+            {
+                errorMessage = "Invalid Gmail address. Gmail usernames must contain at least 6 letters or numbers before @gmail.com.";
+                return false;
+            }
+
+            errorMessage = null;
+            return true;
+        }
+
+        public void CheckUsernameAvailability(string username, Action<bool, string> onComplete)
+        {
+            if (!ValidateUsernameFormat(username, out string cleanUser, out string formatErr))
+            {
+                onComplete?.Invoke(false, formatErr);
+                return;
+            }
+
+            if (SyncManager.Instance != null && !SyncManager.Instance.IsOnline)
+            {
+                return;
+            }
+
+            if (_usernameCheckCoroutine != null)
+            {
+                StopCoroutine(_usernameCheckCoroutine);
+            }
+            _usernameCheckCoroutine = StartCoroutine(CheckUsernameAvailabilityRoutine(cleanUser, onComplete));
+        }
+
+        private IEnumerator CheckUsernameAvailabilityRoutine(string cleanUser, Action<bool, string> onComplete)
+        {
+            string encoded = UnityWebRequest.EscapeURL(cleanUser);
+            using var req = UnityWebRequest.Get($"{ApiBaseUrl}/auth/check-username?username={encoded}");
+            req.timeout = 8;
+            yield return req.SendWebRequest();
+            _usernameCheckCoroutine = null;
+
+            if (req.result != UnityWebRequest.Result.Success || string.IsNullOrWhiteSpace(req.downloadHandler?.text))
+            {
+                string err = TryExtractErrorMessage(req.downloadHandler?.text);
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    onComplete?.Invoke(false, err);
+                }
+                yield break;
+            }
+
+            try
+            {
+                var dto = JsonUtility.FromJson<UsernameAvailabilityDto>(req.downloadHandler.text);
+                if (dto != null)
+                {
+                    onComplete?.Invoke(dto.available, dto.message);
+                }
+            }
+            catch
+            {
+                // Ignore transient availability check parse errors
+            }
+        }
 
         private void Awake()
         {
@@ -66,18 +217,21 @@ namespace KnowledgeWarrior.Progress
                 return;
             }
 
-            string cleanUser = (username ?? string.Empty).Trim();
-            string cleanEmail = (email ?? string.Empty).Trim();
-
-            if (string.IsNullOrWhiteSpace(cleanUser) || string.IsNullOrWhiteSpace(cleanEmail) || string.IsNullOrWhiteSpace(password))
+            if (!ValidateUsernameFormat(username, out string cleanUser, out string userErr))
             {
-                onComplete?.Invoke(false, "Username, a real email address, and password are all required.");
+                onComplete?.Invoke(false, userErr);
                 return;
             }
 
-            if (!cleanEmail.Contains("@") || !cleanEmail.Contains("."))
+            if (!ValidateGmailAddress(email, forForgotPassword: false, out string cleanEmail, out string emailErr))
             {
-                onComplete?.Invoke(false, "Please enter a valid email address for account recovery.");
+                onComplete?.Invoke(false, emailErr);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
+            {
+                onComplete?.Invoke(false, "Password must be at least 6 characters long.");
                 return;
             }
 
@@ -124,10 +278,9 @@ namespace KnowledgeWarrior.Progress
                 return;
             }
 
-            string cleanEmail = (email ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(cleanEmail) || !cleanEmail.Contains("@"))
+            if (!ValidateGmailAddress(email, forForgotPassword: true, out string cleanEmail, out string emailErr))
             {
-                onComplete?.Invoke(false, "Please enter your registered email address.");
+                onComplete?.Invoke(false, emailErr);
                 return;
             }
 
@@ -148,13 +301,20 @@ namespace KnowledgeWarrior.Progress
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(otp))
+            if (!ValidateGmailAddress(email, forForgotPassword: true, out string cleanEmail, out string emailErr))
             {
-                onComplete?.Invoke(false, "Please enter the 6-digit OTP sent to your email.");
+                onComplete?.Invoke(false, emailErr);
                 return;
             }
 
-            var payload = new VerifyOtpRequestDto { email = email.Trim(), otp = otp.Trim() };
+            string cleanOtp = (otp ?? string.Empty).Trim();
+            if (cleanOtp.Length != 6)
+            {
+                onComplete?.Invoke(false, "Please enter the 6-digit OTP sent to your registered Gmail.");
+                return;
+            }
+
+            var payload = new VerifyOtpRequestDto { email = cleanEmail, otp = cleanOtp };
             StartCoroutine(SimplePostRoutine($"{ApiBaseUrl}/auth/verify-otp", JsonUtility.ToJson(payload), (ok, msg, _) =>
             {
                 onComplete?.Invoke(ok, msg);
@@ -170,16 +330,29 @@ namespace KnowledgeWarrior.Progress
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(otp) || string.IsNullOrWhiteSpace(newPassword))
+            if (!ValidateGmailAddress(email, forForgotPassword: true, out string cleanEmail, out string emailErr))
             {
-                onComplete?.Invoke(false, "Email, 6-digit OTP, and new password are required.", null);
+                onComplete?.Invoke(false, emailErr, null);
+                return;
+            }
+
+            string cleanOtp = (otp ?? string.Empty).Trim();
+            if (cleanOtp.Length != 6 || string.IsNullOrWhiteSpace(newPassword))
+            {
+                onComplete?.Invoke(false, "Registered Gmail address, 6-digit OTP, and new password are required.", null);
+                return;
+            }
+
+            if (newPassword.Length < 6)
+            {
+                onComplete?.Invoke(false, "New password must be at least 6 characters long.", null);
                 return;
             }
 
             var payload = new ResetPasswordRequestDto
             {
-                email = email.Trim(),
-                otp = otp.Trim(),
+                email = cleanEmail,
+                otp = cleanOtp,
                 newPassword = newPassword,
             };
 
@@ -468,7 +641,7 @@ namespace KnowledgeWarrior.Progress
                 try
                 {
                     var res = JsonUtility.FromJson<GenericAuthMessageDto>(responseText);
-                    if (!string.IsNullOrWhiteSpace(res?.previewUrl))
+                    if (SyncManager.IsLocalDevelopmentEnvironment && !string.IsNullOrWhiteSpace(res?.previewUrl))
                     {
                         LastOtpPreviewUrl = res.previewUrl;
                     }
@@ -647,6 +820,14 @@ namespace KnowledgeWarrior.Progress
             public SubjectProgressPlayerDto player;
             public string[] seenQuestionIds;
             public SubjectProgressItemDto[] subjects;
+        }
+
+        [Serializable]
+        private class UsernameAvailabilityDto
+        {
+            public bool available;
+            public string message;
+            public string error;
         }
 
         [Serializable]

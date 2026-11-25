@@ -84,11 +84,6 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 0 }) {
           </button>
         );
       })}
-
-      <div style={{ marginTop: 'auto', padding: '16px 12px', borderTop: '1px solid var(--border-color)', fontSize: '12px', color: 'var(--text-muted)' }}>
-        <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Phase 2: Cloud & AI</p>
-        <p style={{ marginTop: '4px' }}>Gemini 3.8 Flash • Express • PostgreSQL</p>
-      </div>
     </aside>
   );
 }
