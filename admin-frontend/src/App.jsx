@@ -44,6 +44,7 @@ export default function App() {
   const [reviewLayout, setReviewLayout] = useState('grid');
   const [loadingPending, setLoadingPending] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Show transient banner notification
   const notify = (msg, type = 'success') => {
@@ -127,7 +128,23 @@ export default function App() {
     await loadUserDataAndStats();
   };
 
-  const handleLogout = () => {
+  useEffect(() => {
+    if (!showLogoutConfirm) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowLogoutConfirm(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showLogoutConfirm]);
+
+  const handleRequestLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const handleConfirmLogout = () => {
+    setShowLogoutConfirm(false);
     localStorage.removeItem('kw_admin_token');
     setUser(null);
     notify('Signed out successfully.');
@@ -273,7 +290,7 @@ export default function App() {
 
   // 2. Full-Screen Login Wall for Unauthenticated Guests
   if (!user) {
-    return <LoginPage onLoginSuccess={handleLogin} health={health} />;
+    return <LoginPage onLoginSuccess={handleLogin} />;
   }
 
   // 3. Authenticated Admin Dashboard Layout (Full Viewport Space Maximized)
@@ -310,8 +327,106 @@ export default function App() {
         </div>
       )}
 
+      {/* Sign Out Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="logout-confirm-title"
+          onClick={() => setShowLogoutConfirm(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            backgroundColor: 'rgba(2, 6, 23, 0.75)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            animation: 'fadeIn 0.15s ease-out',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '420px',
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '28px',
+              boxShadow: 'var(--shadow-lg)',
+            }}
+          >
+            <h3
+              id="logout-confirm-title"
+              style={{
+                fontSize: '18px',
+                fontWeight: 800,
+                color: 'var(--text-primary)',
+                marginBottom: '10px',
+              }}
+            >
+              Confirm Sign Out
+            </h3>
+            <p
+              style={{
+                fontSize: '14px',
+                lineHeight: 1.55,
+                color: 'var(--text-secondary)',
+                marginBottom: '24px',
+              }}
+            >
+              Are you sure you want to sign out of the Administrator Portal? You will need to sign in again with your administrator credentials to continue.
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                style={{
+                  padding: '9px 16px',
+                  backgroundColor: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmLogout}
+                style={{
+                  padding: '9px 18px',
+                  backgroundColor: 'var(--accent-danger)',
+                  border: 'none',
+                  borderRadius: 'var(--radius-md)',
+                  color: '#ffffff',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(239, 68, 68, 0.35)',
+                }}
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <Header user={user} onLogout={handleLogout} health={health} />
+      <Header user={user} onLogout={handleRequestLogout} />
 
       <div style={{ display: 'flex', flex: 1, width: '100%', minWidth: 0 }}>
         {/* Navigation Sidebar */}

@@ -39,6 +39,7 @@ GoogleService-Info.plist
 .railway/
 .vercel/
 .netlify/
+.wrangler/
 
 # Certificates, Private Keys and Android Signing Keystores
 *.keystore

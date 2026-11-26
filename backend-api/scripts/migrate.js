@@ -77,6 +77,8 @@ async function runMigrations() {
         banned_at TIMESTAMPTZ,
         reset_otp_hash VARCHAR(255),
         reset_otp_expires_at TIMESTAMPTZ,
+        reset_otp_attempts SMALLINT DEFAULT 0,
+        reset_otp_requested_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         last_synced_at TIMESTAMPTZ DEFAULT NOW()
       );
@@ -84,9 +86,37 @@ async function runMigrations() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_hash VARCHAR(255);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_attempts SMALLINT DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_requested_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS battles_won INT DEFAULT 0;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS battles_lost INT DEFAULT 0;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email)) WHERE email IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_admin ON users ((role)) WHERE role = 'admin';
       CREATE INDEX IF NOT EXISTS idx_users_xp ON users(total_xp DESC);
+
+      CREATE OR REPLACE FUNCTION enforce_single_admin_account()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        IF NEW.role = 'admin' THEN
+          IF EXISTS (
+            SELECT 1 FROM users
+            WHERE role = 'admin'
+              AND (TG_OP = 'INSERT' OR id <> NEW.id)
+          ) THEN
+            RAISE EXCEPTION 'Only one administrator account is permitted in Knowledge Warrior. Creating another admin account is strictly disallowed.'
+              USING ERRCODE = '23505';
+          END IF;
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_enforce_single_admin ON users;
+      CREATE TRIGGER trg_enforce_single_admin
+        BEFORE INSERT OR UPDATE OF role ON users
+        FOR EACH ROW
+        EXECUTE FUNCTION enforce_single_admin_account();
     `);
 
     await client.query(`

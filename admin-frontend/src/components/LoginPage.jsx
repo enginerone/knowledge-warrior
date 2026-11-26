@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 
-export default function LoginPage({ onLoginSuccess, health }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('AdminPassword123!');
+export default function LoginPage({ onLoginSuccess }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -23,12 +23,6 @@ export default function LoginPage({ onLoginSuccess, health }) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillDevCredentials = () => {
-    setUsername('admin');
-    setPassword('AdminPassword123!');
-    setError('');
   };
 
   return (
@@ -86,7 +80,7 @@ export default function LoginPage({ onLoginSuccess, health }) {
             marginTop: '6px',
             fontWeight: 500,
           }}>
-            Developer & Administrator Operations Portal
+            Administrator Operations Portal
           </p>
         </div>
 
@@ -144,7 +138,7 @@ export default function LoginPage({ onLoginSuccess, health }) {
               autoFocus
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="admin"
+              placeholder="Enter administrator username"
               style={{
                 width: '100%',
                 padding: '11px 14px',
@@ -176,7 +170,7 @@ export default function LoginPage({ onLoginSuccess, health }) {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••••"
+              placeholder="Enter administrator password"
               style={{
                 width: '100%',
                 padding: '11px 14px',
@@ -191,33 +185,6 @@ export default function LoginPage({ onLoginSuccess, health }) {
               onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; }}
             />
-          </div>
-
-          {/* Quick Dev Credentials helper */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: '12px',
-            color: 'var(--text-muted)',
-            padding: '2px 0',
-          }}>
-            <span>Admin Account: <strong>admin</strong></span>
-            <button
-              type="button"
-              onClick={fillDevCredentials}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--accent-primary)',
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: '12px',
-                textDecoration: 'underline',
-              }}
-            >
-              Fill Default Credentials
-            </button>
           </div>
 
           {/* Sign In Button */}
@@ -252,36 +219,6 @@ export default function LoginPage({ onLoginSuccess, health }) {
             )}
           </button>
         </form>
-      </div>
-
-      {/* Cloud & DB Status Footer */}
-      <div style={{
-        marginTop: '28px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        fontSize: '12px',
-        color: 'var(--text-muted)',
-      }}>
-        <span style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          color: health?.database === 'connected' ? 'var(--accent-success)' : 'var(--text-muted)',
-          fontWeight: 600,
-        }}>
-          <span style={{
-            width: '7px',
-            height: '7px',
-            borderRadius: '50%',
-            backgroundColor: health?.database === 'connected' ? 'var(--accent-success)' : 'var(--accent-warning)',
-          }}></span>
-          {health?.database === 'connected' ? 'PostgreSQL Online' : 'Connecting Database...'}
-        </span>
-        <span>•</span>
-        <span>AI Engine: Gemini 3.8 Flash</span>
-        <span>•</span>
-        <span>v1.0.0</span>
       </div>
     </div>
   );

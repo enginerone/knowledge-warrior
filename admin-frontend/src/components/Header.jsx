@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Header({ user, onLogout, health }) {
+export default function Header({ user, onLogout }) {
   return (
     <header style={{
       display: 'flex',
@@ -33,28 +33,12 @@ export default function Header({ user, onLogout, health }) {
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
             <span>Curriculum Admin Portal</span>
-            <span>•</span>
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              color: health?.database === 'connected' ? 'var(--accent-success)' : 'var(--accent-warning)',
-              fontWeight: 600,
-            }}>
-              <span style={{
-                width: '7px',
-                height: '7px',
-                borderRadius: '50%',
-                backgroundColor: health?.database === 'connected' ? 'var(--accent-success)' : 'var(--accent-warning)',
-              }}></span>
-              {health?.database === 'connected' ? 'PostgreSQL Online' : 'Connecting DB...'}
-            </span>
           </div>
         </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        {user ? (
+        {user && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
               display: 'flex',
@@ -110,25 +94,6 @@ export default function Header({ user, onLogout, health }) {
               Sign Out
             </button>
           </div>
-        ) : (
-          <button
-            onClick={onOpenLogin}
-            style={{
-              backgroundColor: 'var(--accent-primary)',
-              color: '#ffffff',
-              border: 'none',
-              padding: '8px 18px',
-              borderRadius: 'var(--radius-md)',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 600,
-              boxShadow: 'var(--shadow-sm)',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            Educator Login
-          </button>
         )}
       </div>
     </header>

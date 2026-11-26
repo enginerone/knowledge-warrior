@@ -9,6 +9,7 @@
     "dev": "node --watch server.js",
     "db:migrate": "node scripts/migrate.js",
     "db:seed": "node scripts/seed.js",
+    "db:set-admin": "node scripts/setAdminCredentials.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
