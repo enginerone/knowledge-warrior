@@ -1,7 +1,22 @@
-const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
-export const API_BASE = configuredBaseUrl
-  ? (configuredBaseUrl.endsWith('/api/v1') ? configuredBaseUrl : `${configuredBaseUrl}/api/v1`)
-  : '/api/v1';
+const DEFAULT_CLOUD_API_BASE_URL = 'https://knowledge-warrior-production.up.railway.app/api/v1';
+
+function resolveApiBaseUrl() {
+  const rawEnvUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
+  const baseCandidate = rawEnvUrl || (import.meta.env.PROD ? DEFAULT_CLOUD_API_BASE_URL : '');
+
+  if (!baseCandidate) {
+    return '/api/v1';
+  }
+
+  const trimmed = baseCandidate
+    .replace(/\/+$/, '')
+    .replace(/\/api\/v1\/health$/i, '/api/v1')
+    .replace(/\/health$/i, '');
+
+  return trimmed.endsWith('/api/v1') ? trimmed : `${trimmed}/api/v1`;
+}
+
+export const API_BASE = resolveApiBaseUrl();
 
 function getAuthHeaders(isMultipart = false) {
   const token = localStorage.getItem('kw_admin_token');
