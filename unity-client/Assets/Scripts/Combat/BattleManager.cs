@@ -121,6 +121,7 @@ namespace KnowledgeWarrior.Combat
             if (canvas != null)
             {
                 LeaderboardModal.EnsureOnCanvas(canvas, RefreshPlayerInfo);
+                SettingsModal.EnsureOnCanvas(canvas);
                 _biomeModal = BiomeSelectModal.EnsureOnCanvas(canvas, questionManager, OnSubjectBiomeChosen);
                 _subjectLobbyModal = SubjectLobbyModal.EnsureOnCanvas(canvas, StartSubjectMonsterExpedition);
                 _authGateModal = AuthGateModal.EnsureOnCanvas(canvas, OnAuthenticatedSessionReady);

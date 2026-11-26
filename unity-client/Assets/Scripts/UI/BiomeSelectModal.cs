@@ -57,6 +57,7 @@ namespace KnowledgeWarrior.UI
         {
             public GameObject root;
             public Image border;
+            public FxPanel decor;
             public Image accentBar;
             public Button button;
             public TMP_Text biomeTitleText;
@@ -119,17 +120,13 @@ namespace KnowledgeWarrior.UI
             RefreshBiomeCards();
             transform.SetAsLastSibling();
 
-            _modalGroup.alpha = 1f;
-            _modalGroup.interactable = true;
-            _modalGroup.blocksRaycasts = true;
+            ModalFx.Present(_modalGroup, true);
         }
 
         public void Hide()
         {
             if (_modalGroup == null) return;
-            _modalGroup.alpha = 0f;
-            _modalGroup.interactable = false;
-            _modalGroup.blocksRaycasts = false;
+            ModalFx.Present(_modalGroup, false);
         }
 
         private void SelectBiome(BiomeOption option)
@@ -173,6 +170,8 @@ namespace KnowledgeWarrior.UI
                 c.root.SetActive(true);
                 c.border.color = isSelected ? opt.accentColor : new Color(opt.accentColor.r, opt.accentColor.g, opt.accentColor.b, 0.35f);
                 c.accentBar.color = opt.accentColor;
+                c.decor?.SetAccent(opt.accentColor);
+                c.decor?.SetRingAlpha(isSelected ? 0.95f : 0.4f);
                 c.biomeTitleText.text = opt.biomeTitle;
                 c.subjectBadgeText.text = string.IsNullOrEmpty(opt.subjectFilter) ? "ALL SUBJECTS GAUNTLET" : opt.subjectFilter.ToUpperInvariant();
                 c.subjectBadgeText.color = opt.accentColor;
@@ -251,7 +250,7 @@ namespace KnowledgeWarrior.UI
             Transform safeArea = canvasRoot.Find("SafeArea") ?? canvasRoot;
             var hudBtn = CreateButton("BiomeSelectHudButton", safeArea, CardColor,
                 new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(20f, -16f), new Vector2(270f, 54f), "SUBJECT LOBBIES", 19, Gold);
+                new Vector2(20f, -16f), new Vector2(228f, 54f), "SUBJECT LOBBIES", 18, Gold);
             hudBtn.onClick.AddListener(() => Show(allowClose: true));
 
             var backdrop = CreateImage("Backdrop", rt, new Color(0.01f, 0.02f, 0.07f, 0.96f));
@@ -266,10 +265,15 @@ namespace KnowledgeWarrior.UI
             var w = window.rectTransform;
 
             CreateText("HeaderTitle", w, "SELECT A SUBJECT BIOME", 34, Gold, TextAlignmentOptions.MidlineLeft, true,
-                r => Place(r, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(32, -20), new Vector2(760, 48)));
+                r => Place(r, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(32, -20), new Vector2(590, 48)));
 
             _subtitleText = CreateText("HeaderSubtitle", w, "", 19, TextSoft, TextAlignmentOptions.TopLeft, false,
                 r => Place(r, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(32, -72), new Vector2(956, 56)));
+
+            var settingsBtn = CreateButton("SettingsButton", w, CardColor,
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1),
+                new Vector2(-200, -18), new Vector2(160, 52), "SETTINGS", 20, Violet);
+            settingsBtn.onClick.AddListener(() => SettingsModal.Instance?.Show());
 
             _closeButton = CreateButton("CloseButton", w, new Color(1f, 0.36f, 0.48f, 1f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1),
@@ -297,6 +301,7 @@ namespace KnowledgeWarrior.UI
                 var cardFill = CreateImage("Fill", border.rectTransform, CardColor);
                 Stretch(cardFill.rectTransform, 2, 2, 2, 2);
                 var c = cardFill.rectTransform;
+                var decor = UIDecorator.DecoratePanel(c, Cyan, 24f, 0.10f);
 
                 var btn = border.gameObject.AddComponent<Button>();
                 btn.targetGraphic = cardFill;
@@ -328,6 +333,7 @@ namespace KnowledgeWarrior.UI
                 {
                     root = border.gameObject,
                     border = border,
+                    decor = decor,
                     accentBar = accentBar,
                     button = btn,
                     biomeTitleText = biomeTitle,
@@ -340,6 +346,8 @@ namespace KnowledgeWarrior.UI
                 });
             }
 
+            ModalFx.Dress(_modalGroup, UIPalette.Cyan);
+            ModalFx.SetStagger(_modalGroup, _cards.Select(card => (RectTransform)card.root.transform));
             Hide();
         }
 

@@ -38,6 +38,7 @@ namespace KnowledgeWarrior.Progress
         public event Action OnAuthStateChanged;
 
         private Coroutine _usernameCheckCoroutine;
+        private Coroutine _emailCheckCoroutine;
 
         private string ApiBaseUrl =>
             SyncManager.Instance != null
@@ -168,6 +169,58 @@ namespace KnowledgeWarrior.Progress
             req.timeout = 8;
             yield return req.SendWebRequest();
             _usernameCheckCoroutine = null;
+
+            if (req.result != UnityWebRequest.Result.Success || string.IsNullOrWhiteSpace(req.downloadHandler?.text))
+            {
+                string err = TryExtractErrorMessage(req.downloadHandler?.text);
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    onComplete?.Invoke(false, err);
+                }
+                yield break;
+            }
+
+            try
+            {
+                var dto = JsonUtility.FromJson<UsernameAvailabilityDto>(req.downloadHandler.text);
+                if (dto != null)
+                {
+                    onComplete?.Invoke(dto.available, dto.message);
+                }
+            }
+            catch
+            {
+                // Ignore transient availability check parse errors
+            }
+        }
+
+        public void CheckEmailAvailability(string email, Action<bool, string> onComplete)
+        {
+            if (!ValidateGmailAddress(email, forForgotPassword: false, out string cleanEmail, out string formatErr))
+            {
+                onComplete?.Invoke(false, formatErr);
+                return;
+            }
+
+            if (SyncManager.Instance != null && !SyncManager.Instance.IsOnline)
+            {
+                return;
+            }
+
+            if (_emailCheckCoroutine != null)
+            {
+                StopCoroutine(_emailCheckCoroutine);
+            }
+            _emailCheckCoroutine = StartCoroutine(CheckEmailAvailabilityRoutine(cleanEmail, onComplete));
+        }
+
+        private IEnumerator CheckEmailAvailabilityRoutine(string cleanEmail, Action<bool, string> onComplete)
+        {
+            string encoded = UnityWebRequest.EscapeURL(cleanEmail);
+            using var req = UnityWebRequest.Get($"{ApiBaseUrl}/auth/check-email?email={encoded}");
+            req.timeout = 8;
+            yield return req.SendWebRequest();
+            _emailCheckCoroutine = null;
 
             if (req.result != UnityWebRequest.Result.Success || string.IsNullOrWhiteSpace(req.downloadHandler?.text))
             {
@@ -364,6 +417,7 @@ namespace KnowledgeWarrior.Progress
             ClearStoredCredentials();
             ProgressManager.ResetSessionState();
             FindAnyObjectByType<QuestionManager>()?.ResetSeenQuestionsForLogout();
+            Audio.BattleAudioManager.Instance?.StopMusic();
             OnAuthStateChanged?.Invoke();
         }
 

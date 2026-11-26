@@ -1,4 +1,4 @@
 {
-  "cloudProductionApiUrl": "https://knowledge-warrior-api-production.up.railway.app/api/v1",
+  "cloudProductionApiUrl": "https://knowledge-warrior-production.up.railway.app/api/v1",
   "localDevelopmentApiUrl": "http://localhost:5000/api/v1"
 }

@@ -119,9 +119,7 @@ namespace KnowledgeWarrior.UI
         public void Show()
         {
             if (_modalGroup == null) BuildRuntimeUI(transform.parent);
-            _modalGroup.alpha = 1f;
-            _modalGroup.interactable = true;
-            _modalGroup.blocksRaycasts = true;
+            ModalFx.Present(_modalGroup, true);
 
             InspectAuthenticatedPlayer();
             RefreshAuthSection();
@@ -131,9 +129,7 @@ namespace KnowledgeWarrior.UI
         public void Hide()
         {
             if (_modalGroup == null) return;
-            _modalGroup.alpha = 0f;
-            _modalGroup.interactable = false;
-            _modalGroup.blocksRaycasts = false;
+            ModalFx.Present(_modalGroup, false);
         }
 
         private void SelectTab(LeaderboardTab tab)
@@ -395,7 +391,7 @@ namespace KnowledgeWarrior.UI
 
             Transform safeArea = canvasRoot.Find("SafeArea") ?? canvasRoot;
             var hudBtn = CreateButton("LeaderboardHudButton", safeArea, CardColor, new Vector2(1f, 1f), new Vector2(1f, 1f),
-                new Vector2(1f, 1f), new Vector2(-20f, -16f), new Vector2(270f, 54f), "LEADERBOARD", 19, Cyan, out _hudButtonLabel);
+                new Vector2(1f, 1f), new Vector2(-192f, -16f), new Vector2(214f, 54f), "LEADERBOARD", 18, Cyan, out _hudButtonLabel);
             hudBtn.onClick.AddListener(Show);
 
             var backdrop = CreateImage("Backdrop", rt, new Color(0.01f, 0.02f, 0.07f, 0.96f));
@@ -518,6 +514,8 @@ namespace KnowledgeWarrior.UI
             _authFeedbackText = CreateText("AuthFeedback", rightBottom, "", 20, Green, TextAlignmentOptions.BottomLeft, false,
                 r => Place(r, new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0), new Vector2(0, 18), new Vector2(-52, 74)));
 
+            ModalFx.Dress(_modalGroup, UIPalette.Cyan);
+            ModalFx.DecorateByName((RectTransform)_modalGroup.transform, UIPalette.Cyan, false, "ProfileInspectCard", "CloudAccountCard", "LeaderboardColumn");
             Hide();
         }
 

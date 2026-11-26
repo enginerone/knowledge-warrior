@@ -89,6 +89,8 @@ namespace KnowledgeWarrior.UI
         private float _ghostDelay;
         private Coroutine _feedbackRoutine, _resultRoutine, _panelRoutine;
         private GameObject _safeAreaObject;
+        private BattleHudHandles _hudFx;
+        private float _xpTarget, _xpShown;
 
         public void Initialize(Action<int> onAnswer, Action onContinue, Action onResult)
         {
@@ -96,6 +98,21 @@ namespace KnowledgeWarrior.UI
             _onContinue = onContinue;
             _onResult = onResult;
             _safeAreaObject = transform.Find("SafeArea")?.gameObject;
+            _hudFx ??= BattleHudDecorator.Dress(new BattleHudRefs
+            {
+                canvasRoot = (RectTransform)transform,
+                playerHpFill = playerHpFill,
+                playerXpFill = playerXpFill,
+                enemyHpFill = enemyHpFill,
+                questionPanel = questionPanel,
+                feedbackGroup = feedbackGroup,
+                bannerGroup = bannerGroup,
+                resultCard = resultCard,
+                turnBadge = turnBadge,
+                streakText = streakText,
+                continueButton = continueButton,
+                resultButton = resultButton,
+            });
 
             for (int i = 0; i < answerButtons.Length; i++)
             {
@@ -146,7 +163,8 @@ namespace KnowledgeWarrior.UI
             playerLevelText.color = badgeColor;
 
             float ratio = xpToNext > 0 ? Mathf.Clamp01((float)xp / xpToNext) : 1f;
-            SetFill(playerXpFill, ratio);
+            if (ratio < _xpTarget - 0.5f) _xpShown = 0f;
+            _xpTarget = ratio;
             if (playerXpText != null)
             {
                 int pts = !string.IsNullOrWhiteSpace(subject) ? ProgressManager.GetSubjectPoints(subject) : xp;
@@ -158,6 +176,7 @@ namespace KnowledgeWarrior.UI
         {
             float target = max > 0 ? (float)current / max : 0f;
             if (target > _playerHpTarget) _playerGhost = target;
+            else if (target < _playerHpTarget - 0.001f) UIMotion.Shake(_hudFx?.playerHud, 12f, 0.35f);
             _playerHpTarget = target;
             _ghostDelay = 0.35f;
             playerHpText.text = $"{current} / {max}";
@@ -167,6 +186,7 @@ namespace KnowledgeWarrior.UI
         {
             float target = max > 0 ? (float)current / max : 0f;
             if (target > _enemyHpTarget) _enemyGhost = target;
+            else if (target < _enemyHpTarget - 0.001f) UIMotion.Shake(_hudFx?.enemyHud, 12f, 0.35f);
             _enemyHpTarget = target;
             _ghostDelay = 0.35f;
             enemyHpText.text = $"{current} / {max}";
@@ -185,6 +205,7 @@ namespace KnowledgeWarrior.UI
         {
             if (streakText == null) return;
             streakText.text = streak >= 2 ? $"STREAK x{streak}" : string.Empty;
+            _hudFx?.streak?.Apply(streak);
         }
 
         public void SetTurn(TurnType turn)
@@ -193,6 +214,7 @@ namespace KnowledgeWarrior.UI
             turnText.text = attack ? "ATTACK" : "DEFEND";
             turnBadge.color = attack ? attackColor : defendColor;
             turnHintText.text = attack ? "Answer correctly to strike!" : "Answer correctly to block!";
+            UIMotion.Punch(turnBadge.rectTransform, 0.18f, 0.32f);
         }
 
         public void ShowQuestion(QuestionData q)
@@ -256,6 +278,7 @@ namespace KnowledgeWarrior.UI
             feedbackBody.text = string.IsNullOrWhiteSpace(explanation) ? "" : explanation;
             if (_feedbackRoutine != null) StopCoroutine(_feedbackRoutine);
             _feedbackRoutine = StartCoroutine(FadeGroup(feedbackGroup, true, 0.2f));
+            UIMotion.Pop((RectTransform)feedbackGroup.transform, 0.94f, 0.3f);
         }
 
         public void HideQuestionPanel()
@@ -291,6 +314,7 @@ namespace KnowledgeWarrior.UI
             bannerTitle.text = title;
             bannerTitle.color = color;
             bannerSubtitle.text = subtitle;
+            _hudFx?.bannerShine?.Trigger();
 
             var rt = (RectTransform)bannerGroup.transform;
             float t = 0f;
@@ -316,6 +340,7 @@ namespace KnowledgeWarrior.UI
             resultBody.text = body;
             resultButtonLabel.text = buttonLabel;
             if (resultAccent != null) resultAccent.color = accent;
+            _hudFx?.resultPanel?.SetAccent(accent);
             if (_resultRoutine != null) StopCoroutine(_resultRoutine);
             _resultRoutine = StartCoroutine(ResultInRoutine());
         }
@@ -342,6 +367,7 @@ namespace KnowledgeWarrior.UI
             }
             resultGroup.alpha = 1f;
             resultCard.localScale = Vector3.one;
+            UIBurst.Confetti(resultCard);
         }
 
         public void SpawnPopup(Vector3 worldPosition, string message, Color color, float scale = 1f)
@@ -379,6 +405,8 @@ namespace KnowledgeWarrior.UI
             }
 
             SetFill(playerHpFill, _playerHpShown);
+            _xpShown = Mathf.Lerp(_xpShown, _xpTarget, 1f - Mathf.Exp(-6f * dt));
+            SetFill(playerXpFill, _xpShown);
             SetFill(playerHpGhost, Mathf.Max(_playerGhost, _playerHpShown));
             SetFill(enemyHpFill, _enemyHpShown);
             SetFill(enemyHpGhost, Mathf.Max(_enemyGhost, _enemyHpShown));

@@ -148,17 +148,10 @@ namespace KnowledgeWarrior.EditorTools
 
         private static void ApplyMobilePortraitSettings(bool showDialog)
         {
-            PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
-            PlayerSettings.allowedAutorotateToPortrait = true;
-            PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
-            PlayerSettings.allowedAutorotateToLandscapeLeft = false;
-            PlayerSettings.allowedAutorotateToLandscapeRight = false;
-            PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentOnly;
-            if (PlayerSettings.productName == "unity-client") PlayerSettings.productName = "Knowledge Warrior";
-            AssetDatabase.SaveAssets();
+            AndroidReleaseConfigurator.ApplyUniversalAndroidSettings(false);
 
             if (showDialog)
-                EditorUtility.DisplayDialog("Knowledge Warrior", "Player Settings: orientation set to Portrait (1080x1920) and HTTPS enforced for Release builds.", "OK");
+                EditorUtility.DisplayDialog("Knowledge Warrior", "Player Settings: orientation set to Portrait (1080x1920), universal ARMv7 + ARM64 enabled, and HTTPS enforced for Release builds.", "OK");
         }
 
         private static void ConfigureArtImporters()
