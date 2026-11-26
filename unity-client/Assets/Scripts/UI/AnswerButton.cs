@@ -28,6 +28,8 @@ namespace KnowledgeWarrior.UI
         private int _index;
         private Action<int> _onClick;
         private Coroutine _popRoutine;
+        private Image _ring;
+        private ShineSweep _shine;
 
         public Button Button => button;
 
@@ -36,7 +38,20 @@ namespace KnowledgeWarrior.UI
             if (button == null) button = GetComponent<Button>();
             if (canvasGroup == null) canvasGroup = GetComponent<CanvasGroup>();
             button.onClick.AddListener(() => _onClick?.Invoke(_index));
+
+            var rect = (RectTransform)transform;
+            _ring = UIDecorator.AddRing(rect, RingColor(VisualState.Normal));
+            _shine = UIDecorator.AddShine(rect, 0.30f, false, 4f, 8f);
+            if (letterBadge != null) UIDecorator.AddGloss((RectTransform)letterBadge.transform, 0.35f, 0.18f, 0.55f);
         }
+
+        private static Color RingColor(VisualState state) => state switch
+        {
+            VisualState.Correct => UIPalette.WithAlpha(Color.white, 0.9f),
+            VisualState.Wrong => UIPalette.WithAlpha(Color.white, 0.9f),
+            VisualState.Dimmed => UIPalette.WithAlpha(UIPalette.Cyan, 0.12f),
+            _ => UIPalette.WithAlpha(UIPalette.Cyan, 0.45f),
+        };
 
         public void Bind(int index, Action<int> onClick)
         {
@@ -67,8 +82,18 @@ namespace KnowledgeWarrior.UI
             if (letterBadge != null) letterBadge.color = badge;
             if (letterText != null) letterText.color = state is VisualState.Correct or VisualState.Wrong ? bg : new Color(0.05f, 0.07f, 0.18f);
             if (canvasGroup != null) canvasGroup.alpha = alpha;
+            if (_ring != null) _ring.color = RingColor(state);
 
             if (state is VisualState.Correct or VisualState.Wrong) Punch();
+            if (state == VisualState.Correct)
+            {
+                _shine?.Trigger();
+                UIBurst.Sparks((RectTransform)transform, UIPalette.Green, 16, 560f);
+            }
+            else if (state == VisualState.Wrong)
+            {
+                UIMotion.Shake((RectTransform)transform, 20f, 0.42f);
+            }
         }
 
         /// <summary>Staggered pop-in when a new question appears.</summary>

@@ -92,6 +92,9 @@ async function runMigrations() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS battles_lost INT DEFAULT 0;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email)) WHERE email IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_gmail_canonical
+        ON users ((REPLACE(SPLIT_PART(LOWER(email), '@', 1), '.', '') || '@gmail.com'))
+        WHERE email IS NOT NULL AND LOWER(email) LIKE '%@gmail.com';
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_admin ON users ((role)) WHERE role = 'admin';
       CREATE INDEX IF NOT EXISTS idx_users_xp ON users(total_xp DESC);
 

@@ -85,9 +85,7 @@ namespace KnowledgeWarrior.UI
             }
 
             transform.SetAsLastSibling();
-            _modalGroup.alpha = 1f;
-            _modalGroup.interactable = true;
-            _modalGroup.blocksRaycasts = true;
+            ModalFx.Present(_modalGroup, true);
 
             if (isConnecting)
             {
@@ -113,9 +111,7 @@ namespace KnowledgeWarrior.UI
         {
             if (_modalGroup == null) BuildRuntimeUI();
             transform.SetAsLastSibling();
-            _modalGroup.alpha = 1f;
-            _modalGroup.interactable = true;
-            _modalGroup.blocksRaycasts = true;
+            ModalFx.Present(_modalGroup, true);
 
             _titleText.text = "CONNECTING TO ONLINE SERVER";
             _titleText.color = Cyan;
@@ -131,9 +127,7 @@ namespace KnowledgeWarrior.UI
         public void Hide()
         {
             if (_modalGroup == null) return;
-            _modalGroup.alpha = 0f;
-            _modalGroup.interactable = false;
-            _modalGroup.blocksRaycasts = false;
+            ModalFx.Present(_modalGroup, false);
         }
 
         private void OnRetryClicked()
@@ -193,6 +187,7 @@ namespace KnowledgeWarrior.UI
                 _serverUrlInput.onEndEdit.AddListener(val => SyncManager.SetCustomApiBaseUrl(val));
             }
 
+            ModalFx.Dress(_modalGroup, UIPalette.Orange);
             Hide();
         }
 

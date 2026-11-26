@@ -94,9 +94,7 @@ namespace KnowledgeWarrior.UI
                     : SyncManager.ResolveApiBaseUrl();
             }
             transform.SetAsLastSibling();
-            _modalGroup.alpha = 1f;
-            _modalGroup.interactable = true;
-            _modalGroup.blocksRaycasts = true;
+            ModalFx.Present(_modalGroup, true);
             SwitchPage(initialPage, clearFeedback: true);
         }
 
@@ -121,9 +119,7 @@ namespace KnowledgeWarrior.UI
         public void Hide()
         {
             if (_modalGroup == null) return;
-            _modalGroup.alpha = 0f;
-            _modalGroup.interactable = false;
-            _modalGroup.blocksRaycasts = false;
+            ModalFx.Present(_modalGroup, false);
         }
 
         public void SwitchPage(AuthPage page, bool clearFeedback = true)
@@ -212,7 +208,22 @@ namespace KnowledgeWarrior.UI
             if (!AuthManager.ValidateGmailAddress(rawEmail, forForgotPassword: false, out _, out string err))
             {
                 SetFeedback(err, Red);
+                return;
             }
+
+            if (AuthManager.Instance == null || AuthManager.Instance.IsBusy)
+            {
+                return;
+            }
+
+            ApplyServerUrlIfEdited();
+            AuthManager.Instance.CheckEmailAvailability(rawEmail, (available, message) =>
+            {
+                if (_registerPageRoot != null && _registerPageRoot.activeSelf && !string.IsNullOrWhiteSpace(message))
+                {
+                    SetFeedback(message, available ? Green : Red);
+                }
+            });
         }
 
         private void OnLoginSubmit()
@@ -449,6 +460,7 @@ namespace KnowledgeWarrior.UI
                 _openInboxPreviewBtn.gameObject.SetActive(false);
             }
 
+            ModalFx.Dress(_modalGroup, UIPalette.Cyan);
             SwitchPage(AuthPage.Register);
         }
 

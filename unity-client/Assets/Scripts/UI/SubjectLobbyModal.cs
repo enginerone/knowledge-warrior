@@ -38,6 +38,7 @@ namespace KnowledgeWarrior.UI
         private CanvasGroup _modalGroup;
         private Image _windowBorder;
         private Image _topBannerBar;
+        private RectTransform _windowFill;
         private TMP_Text _lobbyTitleText;
         private TMP_Text _themeSubtitleText;
         private Image _badgePillBg;
@@ -95,9 +96,7 @@ namespace KnowledgeWarrior.UI
             _currentSubject = string.IsNullOrWhiteSpace(subject) ? "Programming" : subject;
 
             transform.SetAsLastSibling();
-            _modalGroup.alpha = 1f;
-            _modalGroup.interactable = true;
-            _modalGroup.blocksRaycasts = true;
+            ModalFx.Present(_modalGroup, true);
 
             RefreshLobbyVisualsAndStats();
         }
@@ -105,9 +104,7 @@ namespace KnowledgeWarrior.UI
         public void Hide()
         {
             if (_modalGroup == null) return;
-            _modalGroup.alpha = 0f;
-            _modalGroup.interactable = false;
-            _modalGroup.blocksRaycasts = false;
+            ModalFx.Present(_modalGroup, false);
         }
 
         private void RefreshLobbyVisualsAndStats()
@@ -130,6 +127,7 @@ namespace KnowledgeWarrior.UI
 
             _windowBorder.color = theme.primaryAccent;
             _topBannerBar.color = theme.primaryAccent;
+            FxPanel.Of(_windowFill)?.SetAccent(theme.primaryAccent);
             _lobbyTitleText.text = $"{_currentSubject.ToUpperInvariant()} LOBBY — {_currentBiomeTitle.ToUpperInvariant()}";
             _lobbyTitleText.color = theme.primaryAccent;
             _themeSubtitleText.text = $"Arena Theme: {theme.tierSubtitle}  •  {SubjectTierSystem.GetLevelRangeLabel(tier)}";
@@ -218,15 +216,21 @@ namespace KnowledgeWarrior.UI
 
             var window = CreateImage("LobbyWindowFill", _windowBorder.rectTransform, PanelColor).rectTransform;
             Stretch(window, 2, 2, 2, 2);
+            _windowFill = window;
 
             _topBannerBar = CreateImage("TopBannerBar", window, Cyan);
             Place(_topBannerBar.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), Vector2.zero, new Vector2(0, 8));
 
             _lobbyTitleText = CreateText("LobbyTitle", window, "SUBJECT LOBBY", 29, Gold, TextAlignmentOptions.MidlineLeft, true,
-                r => Place(r, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(28, -20), new Vector2(780, 44)));
+                r => Place(r, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(28, -20), new Vector2(610, 44)));
             _lobbyTitleText.enableAutoSizing = true;
             _lobbyTitleText.fontSizeMin = 20;
             _lobbyTitleText.fontSizeMax = 29;
+
+            var settingsBtn = CreateButton("SettingsLobbyBtn", window, CardColor,
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1),
+                new Vector2(-190, -18), new Vector2(150, 50), "SETTINGS", 20, Cyan, out _);
+            settingsBtn.onClick.AddListener(() => SettingsModal.Instance?.Show());
 
             var closeBtn = CreateButton("CloseLobbyBtn", window, Red,
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1),
@@ -342,6 +346,9 @@ namespace KnowledgeWarrior.UI
                 _onStartMonsterRun?.Invoke(_currentBiomeTitle, _currentSubject);
             });
 
+            ModalFx.Dress(_modalGroup, UIPalette.Cyan);
+            ModalFx.DecorateByName((RectTransform)_modalGroup.transform, UIPalette.Cyan, true, "MonsterRosterPanelBorder", "MonsterModeBorder");
+            ModalFx.DecorateByName((RectTransform)_modalGroup.transform, UIPalette.Cyan, false, "SubjectStatsCard", "MonsterStageRow_*");
             Hide();
         }
 

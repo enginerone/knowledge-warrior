@@ -83,13 +83,13 @@ namespace KnowledgeWarrior.UI
             if (safe.Find("StagePill") is RectTransform stagePill)
             {
                 Place(stagePill, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                    new Vector2(0f, -16f), new Vector2(460f, 54f));
+                    new Vector2(-79f, -16f), new Vector2(402f, 54f));
                 var stageTxt = stagePill.GetComponentInChildren<TMP_Text>(true);
                 if (stageTxt != null)
                 {
                     stageTxt.enableAutoSizing = true;
-                    stageTxt.fontSizeMin = 15f;
-                    stageTxt.fontSizeMax = 21f;
+                    stageTxt.fontSizeMin = 14f;
+                    stageTxt.fontSizeMax = 20f;
                 }
             }
 

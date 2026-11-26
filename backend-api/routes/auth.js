@@ -149,6 +149,39 @@ router.get('/check-username', async (req, res, next) => {
   }
 });
 
+// GET /api/v1/auth/check-email?email=...
+router.get('/check-email', async (req, res, next) => {
+  try {
+    const gmailCheck = validateGmailAddress(req.query.email, false);
+    if (!gmailCheck.valid) {
+      return res.status(400).json({ available: false, error: gmailCheck.error });
+    }
+
+    const existing = await db.query(
+      `SELECT id FROM users
+       WHERE LOWER(email) = LOWER($1)
+          OR (LOWER(email) LIKE '%@gmail.com'
+              AND REPLACE(SPLIT_PART(LOWER(email), '@', 1), '.', '') || '@gmail.com' = $2)
+       LIMIT 1`,
+      [gmailCheck.email, gmailCheck.canonicalEmail]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.json({
+        available: false,
+        message: 'This Gmail address is already registered to another user. Each Gmail account can only be used once.',
+      });
+    }
+
+    res.json({
+      available: true,
+      message: `Gmail address "${gmailCheck.email}" is available.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/v1/auth/register
 router.post('/register', async (req, res, next) => {
   if (req.body && String(req.body.role || '').trim().toLowerCase() === 'admin') {
@@ -208,7 +241,7 @@ router.post('/register', async (req, res, next) => {
     if (existingEmail.rows.length > 0) {
       await client.query('ROLLBACK');
       return res.status(409).json({
-        error: 'An account with this Gmail address is already registered.',
+        error: 'This Gmail address is already registered to another user. Each Gmail account can only be used once.',
       });
     }
 
@@ -255,8 +288,10 @@ router.post('/register', async (req, res, next) => {
     await client.query('ROLLBACK');
     if (err && err.code === '23505') {
       const detail = String(err.detail || err.constraint || '').toLowerCase();
-      if (detail.includes('email')) {
-        return res.status(409).json({ error: 'An account with this Gmail address is already registered.' });
+      if (detail.includes('email') || detail.includes('gmail')) {
+        return res.status(409).json({
+          error: 'This Gmail address is already registered to another user. Each Gmail account can only be used once.',
+        });
       }
       return res.status(409).json({
         error: `Username "${rawUsername}" is already taken. Please choose a unique username.`,
@@ -339,6 +374,7 @@ router.post('/forgot-password', async (req, res, next) => {
     }
 
     const rawEmail = gmailCheck.email;
+    const canonicalGmail = gmailCheck.canonicalEmail;
 
     if (isOtpRequestRateLimited(req.ip)) {
       return res.status(429).json({
@@ -349,9 +385,11 @@ router.post('/forgot-password', async (req, res, next) => {
     const result = await db.query(
       `SELECT id, username, email, role, COALESCE(is_banned, false) AS is_banned, reset_otp_requested_at
        FROM users
-       WHERE LOWER(email) = LOWER($1)
-         AND LOWER(email) LIKE '%@gmail.com'`,
-      [rawEmail]
+       WHERE (LOWER(email) = LOWER($1)
+              OR REPLACE(SPLIT_PART(LOWER(email), '@', 1), '.', '') || '@gmail.com' = $2)
+         AND LOWER(email) LIKE '%@gmail.com'
+       LIMIT 1`,
+      [rawEmail, canonicalGmail]
     );
 
     if (result.rows.length === 0) {
@@ -434,6 +472,7 @@ async function validateRegisteredGmailOtpSubmission(rawEmailInput, rawOtp) {
   }
 
   const rawEmail = gmailCheck.email;
+  const canonicalGmail = gmailCheck.canonicalEmail;
 
   const result = await db.query(
     `SELECT id,
@@ -446,9 +485,11 @@ async function validateRegisteredGmailOtpSubmission(rawEmailInput, rawOtp) {
             reset_otp_expires_at,
             COALESCE(reset_otp_attempts, 0)::int AS reset_otp_attempts
      FROM users
-     WHERE LOWER(email) = LOWER($1)
-       AND LOWER(email) LIKE '%@gmail.com'`,
-    [rawEmail]
+     WHERE (LOWER(email) = LOWER($1)
+            OR REPLACE(SPLIT_PART(LOWER(email), '@', 1), '.', '') || '@gmail.com' = $2)
+       AND LOWER(email) LIKE '%@gmail.com'
+     LIMIT 1`,
+    [rawEmail, canonicalGmail]
   );
 
   if (result.rows.length === 0) {
