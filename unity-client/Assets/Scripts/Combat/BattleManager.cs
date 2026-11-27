@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using KnowledgeWarrior.Audio;
@@ -66,6 +67,11 @@ namespace KnowledgeWarrior.Combat
         private bool _subjectPoolExhausted;
         private bool _backgroundQuestionRefreshInFlight;
         private bool _sessionBootstrapped;
+        private bool _isPausePromptActive;
+        private BattleState _stateBeforePause;
+        private bool _lastDefeatRequiresRestart;
+        private bool _isRevivingWithCoins;
+        private bool _onlineSignalBannerShown;
         private string _selectedSubject = "Programming";
         private Sprite _heroBaseSprite;
         private GameObject _arenaBackgroundObject;
@@ -122,10 +128,15 @@ namespace KnowledgeWarrior.Combat
             {
                 LeaderboardModal.EnsureOnCanvas(canvas, RefreshPlayerInfo);
                 SettingsModal.EnsureOnCanvas(canvas);
-                _biomeModal = BiomeSelectModal.EnsureOnCanvas(canvas, questionManager, OnSubjectBiomeChosen);
+                _biomeModal = BiomeSelectModal.EnsureOnCanvas(
+                    canvas,
+                    questionManager,
+                    OnSubjectBiomeChosen,
+                    OnHudSubjectLobbiesClicked,
+                    SwitchFromOfflineToOnlineMode);
                 _subjectLobbyModal = SubjectLobbyModal.EnsureOnCanvas(canvas, StartSubjectMonsterExpedition);
                 _authGateModal = AuthGateModal.EnsureOnCanvas(canvas, OnAuthenticatedSessionReady);
-                _networkGateModal = NetworkGateModal.EnsureOnCanvas(canvas, OnRetryOnlineConnection);
+                _networkGateModal = NetworkGateModal.EnsureOnCanvas(canvas, OnRetryOnlineConnection, EnterOfflinePracticeModeFromGate);
             }
 
             if (AuthManager.Instance != null)
@@ -135,6 +146,7 @@ namespace KnowledgeWarrior.Combat
             if (syncManager != null)
             {
                 syncManager.OnOnlineAvailabilityChanged += HandleOnlineAvailabilityChanged;
+                syncManager.OnOnlineSignalRestored += HandleOnlineSignalRestored;
             }
 
             State = BattleState.Idle;
@@ -147,17 +159,93 @@ namespace KnowledgeWarrior.Combat
             if (player != null && ui != null) player.OnHealthChanged -= ui.SetPlayerHp;
             if (enemy != null && ui != null) enemy.OnHealthChanged -= ui.SetEnemyHp;
             if (AuthManager.Instance != null) AuthManager.Instance.OnAuthStateChanged -= HandleAuthStateChanged;
-            if (syncManager != null) syncManager.OnOnlineAvailabilityChanged -= HandleOnlineAvailabilityChanged;
+            if (syncManager != null)
+            {
+                syncManager.OnOnlineAvailabilityChanged -= HandleOnlineAvailabilityChanged;
+                syncManager.OnOnlineSignalRestored -= HandleOnlineSignalRestored;
+            }
         }
 
         private void HandleOnlineAvailabilityChanged(bool online, string reason)
         {
-            if (online || _networkGateModal == null) return;
+            if (online || OfflinePracticeManager.IsOfflinePracticeMode || _networkGateModal == null) return;
             _networkGateModal.Show(reason, isConnecting: false);
+        }
+
+        private void HandleOnlineSignalRestored()
+        {
+            if (!OfflinePracticeManager.IsOfflinePracticeMode) return;
+            if (!_onlineSignalBannerShown)
+            {
+                _onlineSignalBannerShown = true;
+                StartCoroutine(ShowOnlineSignalRestoredBannerRoutine());
+            }
+            UpdateStageHeaderText();
+        }
+
+        private IEnumerator ShowOnlineSignalRestoredBannerRoutine()
+        {
+            if (ui != null && State != BattleState.Idle)
+            {
+                yield return ui.ShowBanner(
+                    "ONLINE SIGNAL RESTORED",
+                    "Open Subject Lobbies or finish this stage to switch to Live Online Mode.",
+                    victoryColor);
+            }
+        }
+
+        private void EnterOfflinePracticeModeFromGate()
+        {
+            StopAllCoroutines();
+            OfflinePracticeManager.EnterOfflinePracticeMode();
+            _onlineSignalBannerShown = false;
+            syncManager?.ResetSignalRestoredNotification();
+
+            bool loaded = OfflinePracticeManager.TryLoadOfflinePracticeQuestions(questionManager, out _);
+            if (_networkGateModal != null) _networkGateModal.Hide();
+            if (_authGateModal != null) _authGateModal.Hide();
+
+            if (!loaded)
+            {
+                OfflinePracticeManager.ExitOfflinePracticeMode();
+                _networkGateModal?.Show("No offline practice questions are cached yet. Connect once online to download questions.", isConnecting: false);
+                return;
+            }
+
+            _sessionBootstrapped = true;
+            SetGameplayActive(true);
+            RefreshPlayerInfo();
+            if (_biomeModal != null)
+            {
+                _biomeModal.Show(allowClose: false);
+            }
+            else
+            {
+                StartSubjectMonsterExpedition(biomeName, _selectedSubject, resumeCheckpoint: false);
+            }
+        }
+
+        private void SwitchFromOfflineToOnlineMode()
+        {
+            BattleAudioManager.Instance?.PlayButtonClick();
+            StopAllCoroutines();
+            OfflinePracticeManager.ExitOfflinePracticeMode();
+            _onlineSignalBannerShown = false;
+            _sessionBootstrapped = false;
+            _isPausePromptActive = false;
+            ui.HideResult();
+            ui.HideQuestionPanel();
+            if (_biomeModal != null) _biomeModal.Hide();
+            if (_subjectLobbyModal != null) _subjectLobbyModal.Hide();
+            State = BattleState.Idle;
+            SetGameplayActive(false);
+            StartCoroutine(BootstrapOnlineSessionRoutine());
         }
 
         private void OnRetryOnlineConnection()
         {
+            OfflinePracticeManager.ExitOfflinePracticeMode();
+            _onlineSignalBannerShown = false;
             StopAllCoroutines();
             StartCoroutine(BootstrapOnlineSessionRoutine());
         }
@@ -210,14 +298,21 @@ namespace KnowledgeWarrior.Combat
                 if (!authOk)
                 {
                     if (_networkGateModal != null) _networkGateModal.Hide();
-                    _authGateModal?.Show(AuthGateModal.AuthPage.Login);
+                    string expiryMsg = AuthManager.Instance.LastInactivityExpiryMessage;
+                    var page = !string.IsNullOrWhiteSpace(expiryMsg)
+                        ? AuthGateModal.AuthPage.Login
+                        : AuthGateModal.AuthPage.Login;
+                    _authGateModal?.Show(page, expiryMsg);
                     yield break;
                 }
             }
             else
             {
                 if (_networkGateModal != null) _networkGateModal.Hide();
-                _authGateModal?.Show(AuthGateModal.AuthPage.Register);
+                string expiryMsg = AuthManager.Instance?.LastInactivityExpiryMessage;
+                _authGateModal?.Show(
+                    !string.IsNullOrWhiteSpace(expiryMsg) ? AuthGateModal.AuthPage.Login : AuthGateModal.AuthPage.Register,
+                    expiryMsg);
                 yield break;
             }
 
@@ -232,7 +327,7 @@ namespace KnowledgeWarrior.Combat
             if (!_sessionBootstrapped)
             {
                 _sessionBootstrapped = true;
-                StartSubjectMonsterExpedition(biomeName, _selectedSubject);
+                StartSubjectMonsterExpedition(biomeName, _selectedSubject, resumeCheckpoint: false);
                 if (showBiomeSelectOnStart && _biomeModal != null)
                 {
                     _biomeModal.Show(allowClose: true);
@@ -266,7 +361,7 @@ namespace KnowledgeWarrior.Combat
             }
 
             _sessionBootstrapped = true;
-            StartSubjectMonsterExpedition(biomeName, _selectedSubject);
+            StartSubjectMonsterExpedition(biomeName, _selectedSubject, resumeCheckpoint: false);
             if (showBiomeSelectOnStart && _biomeModal != null)
             {
                 _biomeModal.Show(allowClose: true);
@@ -276,16 +371,21 @@ namespace KnowledgeWarrior.Combat
         private void HandleAuthStateChanged()
         {
             RefreshPlayerInfo();
-            if (AuthManager.Instance != null && !AuthManager.Instance.IsAuthenticated && _authGateModal != null)
+            if (AuthManager.Instance != null && !AuthManager.Instance.IsAuthenticated &&
+                !OfflinePracticeManager.IsOfflinePracticeMode && _authGateModal != null)
             {
                 StopAllCoroutines();
                 _sessionBootstrapped = false;
                 _uncommittedBattleResult = null;
+                _isPausePromptActive = false;
                 State = BattleState.Idle;
                 SetGameplayActive(false);
                 if (_biomeModal != null) _biomeModal.Hide();
                 if (_subjectLobbyModal != null) _subjectLobbyModal.Hide();
-                _authGateModal.Show(AuthGateModal.AuthPage.Register);
+                string expiryMsg = AuthManager.Instance.LastInactivityExpiryMessage;
+                _authGateModal.Show(
+                    !string.IsNullOrWhiteSpace(expiryMsg) ? AuthGateModal.AuthPage.Login : AuthGateModal.AuthPage.Register,
+                    expiryMsg);
             }
         }
 
@@ -301,9 +401,98 @@ namespace KnowledgeWarrior.Combat
             }
         }
 
+        private void OnHudSubjectLobbiesClicked()
+        {
+            BattleAudioManager.Instance?.PlayButtonClick();
+            AuthManager.Instance?.RecordUserActivity();
+
+            bool battleInProgress = State == BattleState.AwaitingAnswer ||
+                                    State == BattleState.AwaitingContinue ||
+                                    State == BattleState.Intro;
+
+            if (!battleInProgress || _isPausePromptActive || player.IsDead || enemy.IsDead)
+            {
+                _biomeModal?.Show(allowClose: true);
+                return;
+            }
+
+            _stateBeforePause = State;
+            _isPausePromptActive = true;
+            State = BattleState.Idle;
+
+            string modeNotice = OfflinePracticeManager.IsOfflinePracticeMode
+                ? "You are practicing offline."
+                : "Choose RESUME BATTLE to continue, or QUIT TO SUBJECT LOBBIES to save your stage progress so you can switch subjects and return later.";
+
+            ui.ShowResult(
+                "PAUSE EXPEDITION",
+                $"Currently on Stage {_stageIndex + 1}/{_activeRunStages.Count} in {_selectedSubject} ({biomeName}).\n\n{modeNotice}",
+                "RESUME BATTLE",
+                victoryColor,
+                "QUIT TO SUBJECT LOBBIES",
+                QuitCurrentBattleToLobbies);
+        }
+
+        private void ResumePausedBattle()
+        {
+            BattleAudioManager.Instance?.PlayButtonClick();
+            AuthManager.Instance?.RecordUserActivity();
+            _isPausePromptActive = false;
+            ui.HideResult();
+            State = _stateBeforePause;
+            if (State == BattleState.Intro)
+            {
+                NextTurn();
+            }
+        }
+
+        private void QuitCurrentBattleToLobbies()
+        {
+            BattleAudioManager.Instance?.PlayButtonClick();
+            AuthManager.Instance?.RecordUserActivity();
+            _isPausePromptActive = false;
+            StopAllCoroutines();
+
+            if (!OfflinePracticeManager.IsOfflinePracticeMode && !player.IsDead && !enemy.IsDead)
+            {
+                int subjLv = ProgressManager.GetSubjectLevel(_selectedSubject);
+                var checkpoint = new SubjectBattleCheckpoint
+                {
+                    subject = _selectedSubject,
+                    biomeTitle = biomeName,
+                    subjectLevel = subjLv,
+                    stageIndex = _stageIndex,
+                    playerHp = player.CurrentHp,
+                    playerMaxHp = player.MaxHp,
+                    enemyHp = enemy.CurrentHp,
+                    enemyMaxHp = enemy.MaxHp,
+                    turnType = (int)_turn,
+                    streak = _streak,
+                    battleCorrect = _battleCorrect,
+                    battleTotal = _battleTotal,
+                    battleXp = _battleXp,
+                    currentQuestionId = _currentQuestion?.id,
+                    hasCheckpoint = true
+                };
+                SubjectCheckpointManager.SaveCheckpoint(checkpoint);
+                syncManager?.SaveSubjectCheckpointOnline(
+                    _selectedSubject,
+                    _stageIndex,
+                    player.CurrentHp,
+                    enemy.CurrentHp,
+                    true);
+            }
+
+            State = BattleState.Idle;
+            ui.HideResult();
+            ui.HideQuestionPanel();
+            _biomeModal?.Show(allowClose: true);
+        }
+
         private void OnSubjectBiomeChosen(string selectedBiomeTitle, string subjectFilter)
         {
             if (!EnsureConnectedOrBlock()) return;
+            AuthManager.Instance?.RecordUserActivity();
 
             biomeName = !string.IsNullOrWhiteSpace(selectedBiomeTitle) ? selectedBiomeTitle : "Citadel of Code";
             _selectedSubject = !string.IsNullOrWhiteSpace(subjectFilter) ? subjectFilter : "Programming";
@@ -314,15 +503,22 @@ namespace KnowledgeWarrior.Combat
             }
             else
             {
-                StartSubjectMonsterExpedition(biomeName, _selectedSubject);
+                bool shouldResume = !OfflinePracticeManager.IsOfflinePracticeMode &&
+                                    SubjectCheckpointManager.TryGetCheckpoint(_selectedSubject, out _);
+                StartSubjectMonsterExpedition(biomeName, _selectedSubject, shouldResume);
             }
         }
 
-        private void StartSubjectMonsterExpedition(string selectedBiomeTitle, string subjectFilter)
+        private void StartSubjectMonsterExpedition(
+            string selectedBiomeTitle,
+            string subjectFilter,
+            bool resumeCheckpoint = false)
         {
             if (!EnsureConnectedOrBlock()) return;
+            AuthManager.Instance?.RecordUserActivity();
 
             StopAllCoroutines();
+            _isPausePromptActive = false;
             SetGameplayActive(true);
             biomeName = !string.IsNullOrWhiteSpace(selectedBiomeTitle) ? selectedBiomeTitle : "Citadel of Code";
             _selectedSubject = !string.IsNullOrWhiteSpace(subjectFilter) ? subjectFilter : "Programming";
@@ -332,17 +528,98 @@ namespace KnowledgeWarrior.Combat
 
             ApplySubjectThemeAndAudio(isBoss: false);
             ReviveAndSetupPlayer();
+
+            if (resumeCheckpoint &&
+                !OfflinePracticeManager.IsOfflinePracticeMode &&
+                SubjectCheckpointManager.TryGetCheckpoint(_selectedSubject, out var cp) &&
+                cp != null)
+            {
+                ResumeStageFromCheckpoint(cp);
+                return;
+            }
+
+            if (!OfflinePracticeManager.IsOfflinePracticeMode)
+            {
+                SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
+                syncManager?.SaveSubjectCheckpointOnline(_selectedSubject, 0, 0, 0, false);
+            }
             StartStage(0);
+        }
+
+        private void ResumeStageFromCheckpoint(SubjectBattleCheckpoint cp)
+        {
+            _stageIndex = Mathf.Clamp(cp.stageIndex, 0, _activeRunStages.Count - 1);
+            _runFinished = false;
+            _subjectPoolExhausted = false;
+            _streak = Mathf.Max(0, cp.streak);
+            _battleCorrect = Mathf.Max(0, cp.battleCorrect);
+            _battleTotal = Mathf.Max(0, cp.battleTotal);
+            _battleXp = Mathf.Max(0, cp.battleXp);
+            _battleAnswerLogs.Clear();
+            _turn = cp.turnType == 1 ? TurnType.Defend : TurnType.Attack;
+
+            if (cp.playerHp > 0)
+            {
+                player.SetCurrentHp(cp.playerHp);
+            }
+
+            var def = CurrentStage;
+            ApplySubjectThemeAndAudio(isBoss: def.isBoss);
+            enemy.Setup(def.displayName, def.maxHp, def.attack, def.sprite, def.tint, def.worldHeight, def.attackGesture);
+            if (cp.enemyHp > 0 && cp.enemyHp <= def.maxHp)
+            {
+                enemy.SetCurrentHp(cp.enemyHp);
+            }
+
+            ui.SetEnemyName(def.displayName, def.isBoss);
+            UpdateStageHeaderText();
+            ui.SetStreak(_streak);
+            ui.HideResult();
+
+            var restoredQuestion = !string.IsNullOrWhiteSpace(cp.currentQuestionId)
+                ? questionManager.GetQuestionById(cp.currentQuestionId)
+                : null;
+
+            if (restoredQuestion != null)
+            {
+                _currentQuestion = restoredQuestion;
+                ui.SetTurn(_turn);
+                ui.ShowQuestion(_currentQuestion);
+                State = BattleState.AwaitingAnswer;
+            }
+            else
+            {
+                StartCoroutine(IntroRoutine(def));
+            }
         }
 
         private bool EnsureConnectedOrBlock()
         {
+            if (OfflinePracticeManager.IsOfflinePracticeMode)
+            {
+                return true;
+            }
             if (syncManager != null && !syncManager.IsOnline)
             {
-                syncManager.ReportConnectionLost("Internet data connection required. Reconnect to continue playing.");
+                syncManager.ReportConnectionLost("Internet data connection required. Reconnect to continue playing or use Offline Practice Mode.");
                 return false;
             }
             return true;
+        }
+
+        private void UpdateStageHeaderText()
+        {
+            int subjLv = ProgressManager.GetSubjectLevel(_selectedSubject);
+            string badgeName = SubjectTierSystem.GetBadgeNameForLevel(subjLv);
+            if (OfflinePracticeManager.IsOfflinePracticeMode)
+            {
+                string signalTag = syncManager != null && syncManager.IsServerConnected ? "SIGNAL READY • " : "";
+                ui.SetStage($"OFFLINE PRACTICE ({signalTag}{biomeName})  •  Stage {_stageIndex + 1}/{_activeRunStages.Count}");
+            }
+            else
+            {
+                ui.SetStage($"{biomeName} ({badgeName} Lv {subjLv})  •  Stage {_stageIndex + 1}/{_activeRunStages.Count}");
+            }
         }
 
         private void ApplySubjectThemeAndAudio(bool isBoss)
@@ -381,7 +658,7 @@ namespace KnowledgeWarrior.Combat
 
             enemy.Setup(def.displayName, def.maxHp, def.attack, def.sprite, def.tint, def.worldHeight, def.attackGesture);
             ui.SetEnemyName(def.displayName, def.isBoss);
-            ui.SetStage($"{biomeName} ({badgeName} Lv {subjLv})  •  Stage {_stageIndex + 1}/{_activeRunStages.Count}");
+            UpdateStageHeaderText();
 
             ui.SetStreak(0);
             ui.HideResult();
@@ -412,10 +689,26 @@ namespace KnowledgeWarrior.Combat
             var def = CurrentStage;
             string effectiveSubject = !string.IsNullOrWhiteSpace(_selectedSubject) ? _selectedSubject : def.subject;
             int subjectLevel = ProgressManager.GetSubjectLevel(effectiveSubject);
+            bool isOffline = OfflinePracticeManager.IsOfflinePracticeMode;
 
-            _currentQuestion = questionManager.GetQuestionForSubjectAndLevel(effectiveSubject, subjectLevel);
+            _currentQuestion = questionManager.GetQuestionForSubjectLevelAndStage(
+                effectiveSubject,
+                subjectLevel,
+                _stageIndex,
+                isOffline);
             if (_currentQuestion == null)
             {
+                if (isOffline)
+                {
+                    _subjectPoolExhausted = true;
+                    State = BattleState.BattleOver;
+                    ui.ShowResult(
+                        "OFFLINE PRACTICE COMPLETE",
+                        $"You practiced all cached questions for {effectiveSubject} at this tier.",
+                        "OPEN SUBJECT LOBBY",
+                        victoryColor);
+                    return;
+                }
                 StartCoroutine(ReplenishAndRetryTurnRoutine(effectiveSubject, subjectLevel));
                 return;
             }
@@ -425,21 +718,24 @@ namespace KnowledgeWarrior.Combat
 
         private void PresentCurrentQuestion(string effectiveSubject, int subjectLevel)
         {
-            syncManager?.NotifyQuestionSeenOnline(
-                _currentQuestion.id,
-                effectiveSubject,
-                _currentQuestion.difficulty);
-
-            if (!_backgroundQuestionRefreshInFlight &&
-                questionManager.CountUnseenForSubjectAndLevel(effectiveSubject, subjectLevel) <= 4 &&
-                syncManager != null)
+            if (!OfflinePracticeManager.IsOfflinePracticeMode)
             {
-                _backgroundQuestionRefreshInFlight = true;
-                int tierDiff = SubjectTierSystem.GetAlignedQuestionDifficulty(subjectLevel);
-                StartCoroutine(syncManager.ReplenishAndReloadSubjectQuestionsRoutine(
+                syncManager?.NotifyQuestionSeenOnline(
+                    _currentQuestion.id,
                     effectiveSubject,
-                    tierDiff,
-                    (_, _) => _backgroundQuestionRefreshInFlight = false));
+                    _currentQuestion.difficulty);
+
+                if (!_backgroundQuestionRefreshInFlight &&
+                    questionManager.CountUnseenForSubjectAndLevel(effectiveSubject, subjectLevel) <= 4 &&
+                    syncManager != null)
+                {
+                    _backgroundQuestionRefreshInFlight = true;
+                    int tierDiff = SubjectTierSystem.GetAlignedQuestionDifficulty(subjectLevel);
+                    StartCoroutine(syncManager.ReplenishAndReloadSubjectQuestionsRoutine(
+                        effectiveSubject,
+                        tierDiff,
+                        (_, _) => _backgroundQuestionRefreshInFlight = false));
+                }
             }
 
             ui.SetTurn(_turn);
@@ -496,9 +792,10 @@ namespace KnowledgeWarrior.Combat
 
         private void OnAnswerSelected(int index)
         {
-            if (State != BattleState.AwaitingAnswer) return;
+            if (State != BattleState.AwaitingAnswer || player.IsDead || enemy.IsDead) return;
             if (!EnsureConnectedOrBlock()) return;
 
+            AuthManager.Instance?.RecordUserActivity();
             BattleAudioManager.Instance?.PlayButtonClick();
             State = BattleState.Resolving;
             StartCoroutine(ResolveRoutine(index));
@@ -597,7 +894,25 @@ namespace KnowledgeWarrior.Combat
             if (State != BattleState.AwaitingContinue) return;
             if (!EnsureConnectedOrBlock()) return;
 
+            AuthManager.Instance?.RecordUserActivity();
             BattleAudioManager.Instance?.PlayButtonClick();
+
+            if (OfflinePracticeManager.IsOfflinePracticeMode)
+            {
+                if (enemy.IsDead)
+                {
+                    ShowOfflinePracticeResult(victory: true);
+                    return;
+                }
+                if (player.IsDead)
+                {
+                    ShowOfflinePracticeResult(victory: false);
+                    return;
+                }
+                _turn = _turn == TurnType.Attack ? TurnType.Defend : TurnType.Attack;
+                NextTurn();
+                return;
+            }
 
             if (enemy.IsDead)
             {
@@ -614,12 +929,67 @@ namespace KnowledgeWarrior.Combat
             NextTurn();
         }
 
+        private void ShowOfflinePracticeResult(bool victory)
+        {
+            ui.HideQuestionPanel();
+            State = BattleState.BattleOver;
+            var def = CurrentStage;
+            int accuracy = _battleTotal > 0 ? Mathf.RoundToInt(100f * _battleCorrect / _battleTotal) : 0;
+            bool signalReady = syncManager != null && syncManager.IsServerConnected;
+            string syncNote = signalReady
+                ? "\nInternet signal is restored! You can switch back to Live Online Mode now."
+                : "\nOffline Practice Mode: 0 XP and 0 Coins awarded until you play online.";
+
+            if (victory)
+            {
+                BattleAudioManager.Instance?.PlayVictoryFanfare();
+                bool lastStage = _stageIndex >= _activeRunStages.Count - 1;
+                _runFinished = lastStage;
+                _lastDefeatRequiresRestart = false;
+                ui.ShowResult(
+                    lastStage ? "OFFLINE PRACTICE CLEARED" : "PRACTICE STAGE CLEARED",
+                    $"{def.displayName} defeated in Practice Mode.\nAccuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%){syncNote}",
+                    lastStage ? "OPEN SUBJECT LOBBY" : "NEXT MONSTER",
+                    victoryColor,
+                    signalReady ? "SWITCH TO LIVE ONLINE MODE" : null,
+                    signalReady ? SwitchFromOfflineToOnlineMode : (Action)null);
+            }
+            else
+            {
+                BattleAudioManager.Instance?.PlayDefeatStinger();
+                _lastDefeatRequiresRestart = true;
+                ui.ShowResult(
+                    "PRACTICE DEFEATED",
+                    $"{def.displayName} defeated you in Practice Mode.\nAccuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%){syncNote}",
+                    "RESTART EXPEDITION STAGE 1",
+                    defeatColor,
+                    signalReady ? "SWITCH TO LIVE ONLINE MODE" : "OPEN SUBJECT LOBBY",
+                    signalReady ? SwitchFromOfflineToOnlineMode : OpenCurrentSubjectLobbyAfterResult);
+            }
+        }
+
+        private void OpenCurrentSubjectLobbyAfterResult()
+        {
+            BattleAudioManager.Instance?.PlayButtonClick();
+            ui.HideResult();
+            ReviveAndSetupPlayer();
+            if (_subjectLobbyModal != null)
+            {
+                _subjectLobbyModal.ShowForSubject(biomeName, _selectedSubject);
+            }
+            else if (_biomeModal != null)
+            {
+                _biomeModal.Show(allowClose: true);
+            }
+        }
+
         private IEnumerator CommitBattleResultOnlineRoutine(bool victory)
         {
             State = BattleState.Resolving;
             ui.HideQuestionPanel();
 
             var def = _uncommittedStageDef ?? CurrentStage;
+            bool isFinalStageWin = victory && _stageIndex >= _activeRunStages.Count - 1;
             if (_uncommittedBattleResult == null)
             {
                 int xp = _battleXp + (victory ? def.xpReward : 0);
@@ -630,6 +1000,8 @@ namespace KnowledgeWarrior.Combat
                     subject = _selectedSubject,
                     xpGained = xp,
                     victory = victory,
+                    stageIndex = _stageIndex,
+                    clearCheckpoint = isFinalStageWin,
                     correctAnswers = _battleCorrect,
                     totalAnswers = _battleTotal,
                     answerLogs = _battleAnswerLogs.ToArray()
@@ -673,39 +1045,172 @@ namespace KnowledgeWarrior.Combat
             if (levelsGained > 0)
             {
                 _activeRunStages = MonsterCatalog.BuildStagesForSubjectAndLevel(_selectedSubject, sp.level, _baseSceneStages);
-                player.UpdateStats(ProgressManager.MaxHpForLevel(sp.level), ProgressManager.AttackForLevel(sp.level), fullHeal: true);
+                if (victory)
+                {
+                    player.UpdateStats(ProgressManager.MaxHpForLevel(sp.level), ProgressManager.AttackForLevel(sp.level), fullHeal: true);
+                }
             }
             RefreshPlayerInfo();
 
             int accuracy = _battleTotal > 0 ? Mathf.RoundToInt(100f * _battleCorrect / _battleTotal) : 0;
             string badgeName = SubjectTierSystem.GetBadgeNameForLevel(sp.level);
             int nextXp = SubjectTierSystem.XpToNextSubjectLevel(sp.level);
+            int coinsEarned = victory ? SubjectTierSystem.StageWinCoinReward : 0;
+            int totalCoins = ProgressManager.Current.coins;
 
             string body = $"+{awardedXp} {_selectedSubject} XP  •  Accuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%)\n" +
+                          $"Coins Earned: +{coinsEarned} Coins (Balance: {totalCoins} Coins)\n" +
                           $"Online Subject Standing: LV {sp.level}/100 ({badgeName} Badge • {sp.xp}/{nextXp} XP)";
+
             if (levelsGained > 0)
             {
                 body += $"\n<color=#FFD24D>SUBJECT LEVEL UP! Advanced sequentially to LV {sp.level} ({badgeName} Badge) in {_selectedSubject}!</color>";
+            }
+            if (sp.level >= SubjectTierSystem.MaxLevel)
+            {
+                body += $"\n<color=#FFD24D>EXPERT LEVEL 100 MASTERED! Stage victories continue awarding +{SubjectTierSystem.StageWinCoinReward} Coins, Subject Points, and Leaderboard XP.</color>";
             }
 
             if (victory)
             {
                 bool lastStage = _stageIndex >= _activeRunStages.Count - 1;
                 _runFinished = lastStage;
-                ui.ShowResult(lastStage ? "SUBJECT BIOME CLEARED!" : "VICTORY!",
+                _lastDefeatRequiresRestart = false;
+
+                if (lastStage)
+                {
+                    SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
+                }
+                else
+                {
+                    SubjectCheckpointManager.SaveCheckpoint(new SubjectBattleCheckpoint
+                    {
+                        subject = _selectedSubject,
+                        biomeTitle = biomeName,
+                        subjectLevel = sp.level,
+                        stageIndex = _stageIndex + 1,
+                        playerHp = player.CurrentHp,
+                        playerMaxHp = player.MaxHp,
+                        hasCheckpoint = true
+                    });
+                }
+
+                ui.ShowResult(
+                    lastStage ? "SUBJECT BIOME CLEARED!" : "VICTORY!",
                     $"{def.displayName} was defeated.\n{body}",
-                    lastStage ? "Open Subject Lobby" : "Next Monster", victoryColor);
+                    lastStage ? "OPEN SUBJECT LOBBY" : "NEXT MONSTER",
+                    victoryColor);
             }
             else
             {
-                ui.ShowResult("DEFEATED", $"{def.displayName} overpowered you.\n{body}\nTry again or return to the Subject Lobby!",
-                    "Try Again", defeatColor);
+                int reviveCost = SubjectTierSystem.GetReviveCoinCostForLevel(sp.level);
+                bool canAffordRevive = totalCoins >= reviveCost;
+                _lastDefeatRequiresRestart = !canAffordRevive;
+
+                if (canAffordRevive)
+                {
+                    ui.ShowResult(
+                        "DEFEATED",
+                        $"{def.displayName} defeated you on Stage {_stageIndex + 1}/{_activeRunStages.Count}.\n{body}\n" +
+                        $"Spend {reviveCost} Coins ({badgeName} Tier) to revive on Stage {_stageIndex + 1}, or restart from Stage 1.",
+                        $"PAY {reviveCost} COINS TO REVIVE STAGE {_stageIndex + 1}",
+                        defeatColor,
+                        "RESTART EXPEDITION STAGE 1",
+                        RestartExpeditionFromStage1);
+                }
+                else
+                {
+                    ui.ShowResult(
+                        "DEFEATED",
+                        $"{def.displayName} defeated you on Stage {_stageIndex + 1}/{_activeRunStages.Count}.\n{body}\n" +
+                        $"Reviving on Stage {_stageIndex + 1} requires {reviveCost} Coins ({badgeName} Tier), and you have {totalCoins} Coins.\n" +
+                        "Your expedition will restart from Stage 1/4.",
+                        "RESTART EXPEDITION STAGE 1",
+                        defeatColor,
+                        "OPEN SUBJECT LOBBY",
+                        RestartAndOpenLobbyAfterDefeat);
+                }
             }
+        }
+
+        private void RestartExpeditionFromStage1()
+        {
+            BattleAudioManager.Instance?.PlayButtonClick();
+            AuthManager.Instance?.RecordUserActivity();
+            ui.HideResult();
+            if (!OfflinePracticeManager.IsOfflinePracticeMode)
+            {
+                SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
+                syncManager?.SaveSubjectCheckpointOnline(_selectedSubject, 0, 0, 0, false);
+            }
+            ReviveAndSetupPlayer();
+            StartStage(0);
+        }
+
+        private void RestartAndOpenLobbyAfterDefeat()
+        {
+            if (!OfflinePracticeManager.IsOfflinePracticeMode)
+            {
+                SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
+                syncManager?.SaveSubjectCheckpointOnline(_selectedSubject, 0, 0, 0, false);
+            }
+            OpenCurrentSubjectLobbyAfterResult();
+        }
+
+        private IEnumerator ReviveWithCoinsRoutine(int reviveCost)
+        {
+            if (_isRevivingWithCoins) yield break;
+            _isRevivingWithCoins = true;
+
+            bool revivedOk = false;
+            string reviveErr = null;
+            int remainingCoins = ProgressManager.Current.coins;
+
+            yield return syncManager.SpendCoinsForReviveOnlineRoutine(
+                _selectedSubject,
+                _stageIndex,
+                (ok, err, remaining) =>
+                {
+                    revivedOk = ok;
+                    reviveErr = err;
+                    remainingCoins = remaining;
+                });
+
+            _isRevivingWithCoins = false;
+
+            if (!revivedOk)
+            {
+                if (syncManager != null && !syncManager.IsOnline)
+                {
+                    _networkGateModal?.Show(reviveErr, isConnecting: false);
+                    yield break;
+                }
+
+                _lastDefeatRequiresRestart = true;
+                ui.ShowResult(
+                    "CANNOT REVIVE",
+                    $"{reviveErr}\nYour expedition must restart from Stage 1/4.",
+                    "RESTART EXPEDITION STAGE 1",
+                    defeatColor);
+                yield break;
+            }
+
+            ProgressManager.SetCoins(remainingCoins);
+            ui.HideResult();
+            ReviveAndSetupPlayer();
+            StartStage(_stageIndex);
         }
 
         private void OnResultButton()
         {
+            if (_isPausePromptActive)
+            {
+                ResumePausedBattle();
+                return;
+            }
+
             BattleAudioManager.Instance?.PlayButtonClick();
+            AuthManager.Instance?.RecordUserActivity();
             if (!EnsureConnectedOrBlock()) return;
             if (State != BattleState.BattleOver) return;
 
@@ -723,13 +1228,20 @@ namespace KnowledgeWarrior.Combat
                 }
                 else
                 {
-                    StartSubjectMonsterExpedition(biomeName, _selectedSubject);
+                    StartSubjectMonsterExpedition(biomeName, _selectedSubject, resumeCheckpoint: false);
                 }
             }
             else if (player.IsDead)
             {
-                ReviveAndSetupPlayer();
-                StartStage(_stageIndex);
+                if (_lastDefeatRequiresRestart || OfflinePracticeManager.IsOfflinePracticeMode)
+                {
+                    RestartExpeditionFromStage1();
+                }
+                else
+                {
+                    int reviveCost = SubjectTierSystem.GetReviveCoinCostForLevel(ProgressManager.GetSubjectLevel(_selectedSubject));
+                    StartCoroutine(ReviveWithCoinsRoutine(reviveCost));
+                }
             }
             else
             {

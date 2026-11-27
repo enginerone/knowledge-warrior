@@ -21,6 +21,7 @@ namespace KnowledgeWarrior.Progress
         public int questionsAnswered;
         public int correctAnswers;
         public int bestStage;
+        public int coins;
         public List<SubjectProgressData> subjectProgress = new();
     }
 
@@ -104,7 +105,8 @@ namespace KnowledgeWarrior.Progress
                 subject = normalized,
                 level = 1,
                 xp = 0,
-                points = 0
+                points = 0,
+                reviveCoinCost = SubjectTierSystem.GetReviveCoinCostForLevel(1)
             };
             list.Add(created);
             return created;
@@ -117,6 +119,11 @@ namespace KnowledgeWarrior.Progress
         public static BadgeTier GetSubjectBadgeTier(string subject) =>
             SubjectTierSystem.GetTierForLevel(GetSubjectLevel(subject));
 
+        public static void SetCoins(int coins)
+        {
+            Current.coins = Mathf.Max(0, coins);
+        }
+
         public static void ApplyServerPlayerSummary(
             string playerName,
             int currentLevel,
@@ -125,7 +132,8 @@ namespace KnowledgeWarrior.Progress
             int battlesWon,
             int battlesLost,
             int questionsAnswered,
-            int correctAnswers)
+            int correctAnswers,
+            int coins = -1)
         {
             var p = Current;
             if (!string.IsNullOrWhiteSpace(playerName))
@@ -139,6 +147,7 @@ namespace KnowledgeWarrior.Progress
             p.battlesLost = Mathf.Max(0, battlesLost);
             p.questionsAnswered = Mathf.Max(0, questionsAnswered);
             p.correctAnswers = Mathf.Max(0, correctAnswers);
+            if (coins >= 0) p.coins = coins;
         }
 
         public static void SetSubjectProgressFromServer(string subject, int level, int xp, int points)
@@ -149,6 +158,7 @@ namespace KnowledgeWarrior.Progress
                 ? 0
                 : Mathf.Clamp(xp, 0, Mathf.Max(0, SubjectTierSystem.XpToNextSubjectLevel(sp.level) - 1));
             sp.points = Mathf.Max(0, points);
+            sp.reviveCoinCost = SubjectTierSystem.GetReviveCoinCostForLevel(sp.level);
         }
 
         public static void RecordStageClearedInSession(int stageIndex)

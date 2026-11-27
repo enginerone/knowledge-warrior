@@ -23,6 +23,11 @@ namespace KnowledgeWarrior.Progress
         public static string UserIdPrefKey =>
             SyncManager.IsLocalDevelopmentEnvironment ? "kw_local_auth_user_id" : "kw_cloud_auth_user_id";
 
+        public static string LastActiveUtcTicksPrefKey =>
+            SyncManager.IsLocalDevelopmentEnvironment ? "kw_local_last_active_utc" : "kw_cloud_last_active_utc";
+
+        public const double InactivityTimeoutSeconds = 3600.0;
+
         public static AuthManager Instance { get; private set; }
 
         [SerializeField] private int requestTimeoutSeconds = 15;
@@ -34,11 +39,13 @@ namespace KnowledgeWarrior.Progress
         public string AuthenticatedEmail => PlayerPrefs.GetString(EmailPrefKey, string.Empty);
         public string AuthenticatedUserId => PlayerPrefs.GetString(UserIdPrefKey, string.Empty);
         public string LastOtpPreviewUrl { get; private set; }
+        public string LastInactivityExpiryMessage { get; private set; }
 
         public event Action OnAuthStateChanged;
 
         private Coroutine _usernameCheckCoroutine;
         private Coroutine _emailCheckCoroutine;
+        private float _nextInactivityCheckTime;
 
         private string ApiBaseUrl =>
             SyncManager.Instance != null
@@ -259,6 +266,91 @@ namespace KnowledgeWarrior.Progress
             {
                 ProgressManager.Current.playerName = AuthenticatedUsername;
             }
+            _nextInactivityCheckTime = Time.unscaledTime + 10f;
+        }
+
+        private void Update()
+        {
+            if (Time.unscaledTime < _nextInactivityCheckTime) return;
+            _nextInactivityCheckTime = Time.unscaledTime + 10f;
+
+            if (IsAuthenticated && !OfflinePracticeManager.IsOfflinePracticeMode && HasSessionExpiredByInactivity())
+            {
+                ExpireSessionDueToInactivity();
+            }
+        }
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (!IsAuthenticated) return;
+            if (pauseStatus)
+            {
+                RecordUserActivity();
+            }
+            else if (!OfflinePracticeManager.IsOfflinePracticeMode && HasSessionExpiredByInactivity())
+            {
+                ExpireSessionDueToInactivity();
+            }
+            else
+            {
+                RecordUserActivity();
+            }
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (!IsAuthenticated) return;
+            if (!hasFocus)
+            {
+                RecordUserActivity();
+            }
+            else if (!OfflinePracticeManager.IsOfflinePracticeMode && HasSessionExpiredByInactivity())
+            {
+                ExpireSessionDueToInactivity();
+            }
+        }
+
+        private void OnApplicationQuit()
+        {
+            if (IsAuthenticated)
+            {
+                RecordUserActivity();
+            }
+        }
+
+        public void RecordUserActivity()
+        {
+            if (!IsAuthenticated) return;
+            PlayerPrefs.SetString(LastActiveUtcTicksPrefKey, DateTime.UtcNow.Ticks.ToString());
+            PlayerPrefs.Save();
+        }
+
+        public bool HasSessionExpiredByInactivity()
+        {
+            if (!IsAuthenticated) return false;
+            string rawTicks = PlayerPrefs.GetString(LastActiveUtcTicksPrefKey, string.Empty);
+            if (!long.TryParse(rawTicks, out long ticks) || ticks <= 0)
+            {
+                return false;
+            }
+            var lastActiveUtc = new DateTime(ticks, DateTimeKind.Utc);
+            return (DateTime.UtcNow - lastActiveUtc).TotalSeconds >= InactivityTimeoutSeconds;
+        }
+
+        public void ExpireSessionDueToInactivity()
+        {
+            LastInactivityExpiryMessage = "Your session expired after 1 hour of inactivity. Please log in again.";
+            ClearStoredCredentials();
+            SubjectCheckpointManager.ClearInMemoryForLogout();
+            ProgressManager.ResetSessionState();
+            FindAnyObjectByType<QuestionManager>()?.ResetSeenQuestionsForLogout();
+            Audio.BattleAudioManager.Instance?.StopMusic();
+            OnAuthStateChanged?.Invoke();
+        }
+
+        public void ClearInactivityExpiryMessage()
+        {
+            LastInactivityExpiryMessage = null;
         }
 
         public void Register(string username, string email, string password, Action<bool, string> onComplete)
@@ -414,7 +506,9 @@ namespace KnowledgeWarrior.Progress
 
         public void Logout()
         {
+            LastInactivityExpiryMessage = null;
             ClearStoredCredentials();
+            SubjectCheckpointManager.ClearInMemoryForLogout();
             ProgressManager.ResetSessionState();
             FindAnyObjectByType<QuestionManager>()?.ResetSeenQuestionsForLogout();
             Audio.BattleAudioManager.Instance?.StopMusic();
@@ -431,6 +525,13 @@ namespace KnowledgeWarrior.Progress
             if (!IsAuthenticated)
             {
                 onComplete?.Invoke(true, false, null);
+                yield break;
+            }
+
+            if (HasSessionExpiredByInactivity())
+            {
+                ExpireSessionDueToInactivity();
+                onComplete?.Invoke(true, false, LastInactivityExpiryMessage);
                 yield break;
             }
 
@@ -458,12 +559,16 @@ namespace KnowledgeWarrior.Progress
                 if (meReq.result != UnityWebRequest.Result.Success)
                 {
                     string err = TryExtractErrorMessage(meReq.downloadHandler?.text) ?? "Saved session expired. Please sign in again.";
+                    LastInactivityExpiryMessage = err;
                     ClearStoredCredentials();
+                    SubjectCheckpointManager.ClearInMemoryForLogout();
                     ProgressManager.ResetSessionState();
                     onComplete?.Invoke(true, false, err);
                     yield break;
                 }
             }
+
+            RecordUserActivity();
 
             bool profileOk = false;
             string profileErr = null;
@@ -525,7 +630,8 @@ namespace KnowledgeWarrior.Progress
                         res.player.battlesWon,
                         res.player.battlesLost,
                         res.player.questionsAnswered,
-                        res.player.correctAnswers);
+                        res.player.correctAnswers,
+                        res.player.coins);
                 }
 
                 if (res?.subjects != null)
@@ -538,6 +644,12 @@ namespace KnowledgeWarrior.Progress
                             item.subjectLevel,
                             item.subjectXp,
                             item.subjectPoints);
+                        SubjectCheckpointManager.ApplyServerCheckpoint(
+                            item.subject,
+                            item.savedStageIndex,
+                            item.savedPlayerHp,
+                            item.savedEnemyHp,
+                            item.hasActiveCheckpoint);
                     }
                 }
 
@@ -628,11 +740,13 @@ namespace KnowledgeWarrior.Progress
                     yield break;
                 }
 
+                LastInactivityExpiryMessage = null;
                 ProgressManager.ResetSessionState();
                 PlayerPrefs.SetString(SyncManager.AuthTokenPrefKey, res.token);
                 PlayerPrefs.SetString(UsernamePrefKey, res.user.username ?? string.Empty);
                 PlayerPrefs.SetString(EmailPrefKey, res.user.email ?? string.Empty);
                 PlayerPrefs.SetString(UserIdPrefKey, res.user.id ?? string.Empty);
+                PlayerPrefs.SetString(LastActiveUtcTicksPrefKey, DateTime.UtcNow.Ticks.ToString());
                 PlayerPrefs.Save();
 
                 ProgressManager.ApplyServerPlayerSummary(
@@ -643,7 +757,8 @@ namespace KnowledgeWarrior.Progress
                     res.user.battlesWon,
                     res.user.battlesLost,
                     0,
-                    0);
+                    0,
+                    res.user.coins);
 
                 bool hydratedOk = false;
                 string hydrateErr = null;
@@ -743,6 +858,7 @@ namespace KnowledgeWarrior.Progress
             PlayerPrefs.DeleteKey(UsernamePrefKey);
             PlayerPrefs.DeleteKey(EmailPrefKey);
             PlayerPrefs.DeleteKey(UserIdPrefKey);
+            PlayerPrefs.DeleteKey(LastActiveUtcTicksPrefKey);
             PlayerPrefs.Save();
         }
 
@@ -841,6 +957,7 @@ namespace KnowledgeWarrior.Progress
             public int currentLevel;
             public int battlesWon;
             public int battlesLost;
+            public int coins;
         }
 
         [Serializable]
@@ -855,6 +972,7 @@ namespace KnowledgeWarrior.Progress
             public int battlesLost;
             public int questionsAnswered;
             public int correctAnswers;
+            public int coins;
         }
 
         [Serializable]
@@ -866,6 +984,11 @@ namespace KnowledgeWarrior.Progress
             public int subjectPoints;
             public int xpToNextLevel;
             public string badgeTier;
+            public int reviveCoinCost;
+            public int savedStageIndex;
+            public int savedPlayerHp;
+            public int savedEnemyHp;
+            public bool hasActiveCheckpoint;
         }
 
         [Serializable]

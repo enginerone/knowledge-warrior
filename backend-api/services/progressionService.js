@@ -1,6 +1,8 @@
 const MIN_SUBJECT_LEVEL = 1;
 const MAX_SUBJECT_LEVEL = 100;
 const MAX_BATTLE_XP_AWARD = 350;
+const STAGE_WIN_COIN_REWARD = 15;
+const INACTIVITY_TIMEOUT_SECONDS = 3600;
 
 const DEFAULT_SUBJECTS = [
   'Programming',
@@ -22,6 +24,14 @@ function getBadgeTierForLevel(level) {
   if (clamped <= 30) return 'Intermediate';
   if (clamped <= 60) return 'Advanced';
   return 'Expert';
+}
+
+function getReviveCoinCostForLevel(level) {
+  const tier = getBadgeTierForLevel(level);
+  if (tier === 'Beginner') return 30;
+  if (tier === 'Intermediate') return 50;
+  if (tier === 'Advanced') return 70;
+  return 100;
 }
 
 function calculateGlobalLevel(totalXp) {
@@ -48,6 +58,8 @@ function applySequentialSubjectXp(currentLevel, currentXp, currentPoints, rawXpG
       xpToNextLevel: xpToNextSubjectLevel(MAX_SUBJECT_LEVEL),
       badgeTier: getBadgeTierForLevel(MAX_SUBJECT_LEVEL),
       levelsGained: 0,
+      isMaxLevelMastery: true,
+      reviveCoinCost: getReviveCoinCostForLevel(MAX_SUBJECT_LEVEL),
     };
   }
 
@@ -78,6 +90,8 @@ function applySequentialSubjectXp(currentLevel, currentXp, currentPoints, rawXpG
     xpToNextLevel: xpToNextSubjectLevel(level),
     badgeTier: getBadgeTierForLevel(level),
     levelsGained,
+    isMaxLevelMastery: level >= MAX_SUBJECT_LEVEL,
+    reviveCoinCost: getReviveCoinCostForLevel(level),
   };
 }
 
@@ -89,6 +103,7 @@ function buildDefaultSubjectRow(subject) {
     subjectPoints: 0,
     xpToNextLevel: xpToNextSubjectLevel(MIN_SUBJECT_LEVEL),
     badgeTier: getBadgeTierForLevel(MIN_SUBJECT_LEVEL),
+    reviveCoinCost: getReviveCoinCostForLevel(MIN_SUBJECT_LEVEL),
   };
 }
 
@@ -96,9 +111,12 @@ module.exports = {
   MIN_SUBJECT_LEVEL,
   MAX_SUBJECT_LEVEL,
   MAX_BATTLE_XP_AWARD,
+  STAGE_WIN_COIN_REWARD,
+  INACTIVITY_TIMEOUT_SECONDS,
   DEFAULT_SUBJECTS,
   xpToNextSubjectLevel,
   getBadgeTierForLevel,
+  getReviveCoinCostForLevel,
   calculateGlobalLevel,
   applySequentialSubjectXp,
   buildDefaultSubjectRow,

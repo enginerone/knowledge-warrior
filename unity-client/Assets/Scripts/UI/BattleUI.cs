@@ -82,7 +82,10 @@ namespace KnowledgeWarrior.UI
         private Action<int> _onAnswer;
         private Action _onContinue;
         private Action _onResult;
+        private Action _onSecondaryResult;
         private bool _answersEnabled;
+        private Button _secondaryResultButton;
+        private TMP_Text _secondaryResultButtonLabel;
 
         private float _playerHpTarget = 1f, _playerGhost = 1f, _playerHpShown = 1f;
         private float _enemyHpTarget = 1f, _enemyGhost = 1f, _enemyHpShown = 1f;
@@ -120,12 +123,32 @@ namespace KnowledgeWarrior.UI
             }
             continueButton.onClick.AddListener(() => _onContinue?.Invoke());
             resultButton.onClick.AddListener(() => _onResult?.Invoke());
+            EnsureSecondaryResultButton();
 
             SetGroup(feedbackGroup, false);
             SetGroup(bannerGroup, false);
             SetGroup(resultGroup, false);
             SetGroup(questionPanel, false);
             if (streakText != null) streakText.text = string.Empty;
+        }
+
+        private void EnsureSecondaryResultButton()
+        {
+            if (_secondaryResultButton != null || resultButton == null || resultCard == null) return;
+
+            var clone = Instantiate(resultButton.gameObject, resultCard);
+            clone.name = "SecondaryResultButton";
+            _secondaryResultButton = clone.GetComponent<Button>();
+            _secondaryResultButtonLabel = clone.GetComponentInChildren<TMP_Text>(true);
+            var img = clone.GetComponent<Image>();
+            if (img != null) img.color = new Color(0.16f, 0.21f, 0.40f, 1f);
+            if (_secondaryResultButtonLabel != null)
+            {
+                _secondaryResultButtonLabel.color = new Color(0.93f, 0.95f, 1f, 1f);
+            }
+            _secondaryResultButton.onClick.RemoveAllListeners();
+            _secondaryResultButton.onClick.AddListener(() => _onSecondaryResult?.Invoke());
+            _secondaryResultButton.gameObject.SetActive(false);
         }
 
         public void SetGameplayHudVisible(bool visible)
@@ -168,7 +191,10 @@ namespace KnowledgeWarrior.UI
             if (playerXpText != null)
             {
                 int pts = !string.IsNullOrWhiteSpace(subject) ? ProgressManager.GetSubjectPoints(subject) : xp;
-                playerXpText.text = $"{pts} PTS  ({xp}/{xpToNext} XP)";
+                int coins = ProgressManager.Current.coins;
+                playerXpText.text = OfflinePracticeManager.IsOfflinePracticeMode
+                    ? $"OFFLINE PRACTICE  ({xp}/{xpToNext} XP)"
+                    : $"{coins} COINS  •  {pts} PTS";
             }
         }
 
@@ -333,12 +359,65 @@ namespace KnowledgeWarrior.UI
             yield return FadeGroup(bannerGroup, false, 0.3f);
         }
 
-        public void ShowResult(string title, string body, string buttonLabel, Color accent)
+        public void ShowResult(
+            string title,
+            string body,
+            string buttonLabel,
+            Color accent,
+            string secondaryLabel = null,
+            Action onSecondary = null)
         {
+            EnsureSecondaryResultButton();
             resultTitle.text = title;
             resultTitle.color = accent;
             resultBody.text = body;
             resultButtonLabel.text = buttonLabel;
+            _onSecondaryResult = onSecondary;
+
+            var primaryRt = resultButton != null ? (RectTransform)resultButton.transform : null;
+            var bodyRt = resultBody != null ? (RectTransform)resultBody.transform : null;
+            bool hasSecondary = !string.IsNullOrWhiteSpace(secondaryLabel) && onSecondary != null && _secondaryResultButton != null;
+
+            if (hasSecondary)
+            {
+                _secondaryResultButton.gameObject.SetActive(true);
+                if (_secondaryResultButtonLabel != null) _secondaryResultButtonLabel.text = secondaryLabel;
+                var secRt = (RectTransform)_secondaryResultButton.transform;
+                if (primaryRt != null)
+                {
+                    primaryRt.anchorMin = new Vector2(0.5f, 0f);
+                    primaryRt.anchorMax = new Vector2(0.5f, 0f);
+                    primaryRt.pivot = new Vector2(0.5f, 0f);
+                    primaryRt.anchoredPosition = new Vector2(0f, 108f);
+                    primaryRt.sizeDelta = new Vector2(760f, 68f);
+                }
+                secRt.anchorMin = new Vector2(0.5f, 0f);
+                secRt.anchorMax = new Vector2(0.5f, 0f);
+                secRt.pivot = new Vector2(0.5f, 0f);
+                secRt.anchoredPosition = new Vector2(0f, 26f);
+                secRt.sizeDelta = new Vector2(760f, 68f);
+                if (bodyRt != null)
+                {
+                    bodyRt.offsetMin = new Vector2(bodyRt.offsetMin.x, 194f);
+                }
+            }
+            else
+            {
+                if (_secondaryResultButton != null) _secondaryResultButton.gameObject.SetActive(false);
+                if (primaryRt != null)
+                {
+                    primaryRt.anchorMin = new Vector2(0.5f, 0f);
+                    primaryRt.anchorMax = new Vector2(0.5f, 0f);
+                    primaryRt.pivot = new Vector2(0.5f, 0f);
+                    primaryRt.anchoredPosition = new Vector2(0f, 34f);
+                    primaryRt.sizeDelta = new Vector2(700f, 74f);
+                }
+                if (bodyRt != null)
+                {
+                    bodyRt.offsetMin = new Vector2(bodyRt.offsetMin.x, 128f);
+                }
+            }
+
             if (resultAccent != null) resultAccent.color = accent;
             _hudFx?.resultPanel?.SetAccent(accent);
             if (_resultRoutine != null) StopCoroutine(_resultRoutine);
@@ -347,6 +426,8 @@ namespace KnowledgeWarrior.UI
 
         public void HideResult()
         {
+            _onSecondaryResult = null;
+            if (_secondaryResultButton != null) _secondaryResultButton.gameObject.SetActive(false);
             if (_resultRoutine != null) StopCoroutine(_resultRoutine);
             SetGroup(resultGroup, false);
         }

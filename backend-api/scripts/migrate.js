@@ -90,6 +90,8 @@ async function runMigrations() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_requested_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS battles_won INT DEFAULT 0;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS battles_lost INT DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS coins INT DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ DEFAULT NOW();
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email)) WHERE email IS NOT NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_gmail_canonical
@@ -156,6 +158,10 @@ async function runMigrations() {
       );
       ALTER TABLE user_subject_progress ALTER COLUMN subject_xp SET DEFAULT 0;
       ALTER TABLE user_subject_progress ADD COLUMN IF NOT EXISTS subject_points INT DEFAULT 0;
+      ALTER TABLE user_subject_progress ADD COLUMN IF NOT EXISTS saved_stage_index INT DEFAULT 0;
+      ALTER TABLE user_subject_progress ADD COLUMN IF NOT EXISTS saved_player_hp INT DEFAULT 0;
+      ALTER TABLE user_subject_progress ADD COLUMN IF NOT EXISTS saved_enemy_hp INT DEFAULT 0;
+      ALTER TABLE user_subject_progress ADD COLUMN IF NOT EXISTS has_active_checkpoint BOOLEAN DEFAULT FALSE;
       ALTER TABLE user_subject_progress DROP COLUMN IF EXISTS pvp_wins;
       ALTER TABLE user_subject_progress DROP COLUMN IF EXISTS pvp_losses;
       DROP TABLE IF EXISTS pvp_matches CASCADE;

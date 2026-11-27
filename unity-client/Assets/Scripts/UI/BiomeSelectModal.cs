@@ -46,9 +46,12 @@ namespace KnowledgeWarrior.UI
 
         private QuestionManager _questionManager;
         private Action<string, string> _onBiomeSelected;
+        private Action _onHudLobbyButtonClicked;
+        private Action _onSwitchToOnlineRequested;
         private CanvasGroup _modalGroup;
         private TMP_Text _subtitleText;
         private Button _closeButton;
+        private Button _goOnlineButton;
         private string _activeSubject = "Programming";
 
         private readonly List<CardWidgets> _cards = new();
@@ -72,12 +75,14 @@ namespace KnowledgeWarrior.UI
         public static BiomeSelectModal EnsureOnCanvas(
             Canvas canvas,
             QuestionManager questionManager,
-            Action<string, string> onBiomeSelected)
+            Action<string, string> onBiomeSelected,
+            Action onHudLobbyButtonClicked = null,
+            Action onSwitchToOnlineRequested = null)
         {
             var existing = canvas.GetComponentInChildren<BiomeSelectModal>(true);
             if (existing != null)
             {
-                existing.Configure(questionManager, onBiomeSelected);
+                existing.Configure(questionManager, onBiomeSelected, onHudLobbyButtonClicked, onSwitchToOnlineRequested);
                 return existing;
             }
 
@@ -85,12 +90,16 @@ namespace KnowledgeWarrior.UI
             go.layer = LayerMask.NameToLayer("UI");
             go.transform.SetParent(canvas.transform, false);
             var modal = go.AddComponent<BiomeSelectModal>();
-            modal.Configure(questionManager, onBiomeSelected);
+            modal.Configure(questionManager, onBiomeSelected, onHudLobbyButtonClicked, onSwitchToOnlineRequested);
             modal.BuildRuntimeUI(canvas.transform);
             return modal;
         }
 
-        public void Configure(QuestionManager questionManager, Action<string, string> onBiomeSelected)
+        public void Configure(
+            QuestionManager questionManager,
+            Action<string, string> onBiomeSelected,
+            Action onHudLobbyButtonClicked = null,
+            Action onSwitchToOnlineRequested = null)
         {
             if (_questionManager != null)
             {
@@ -98,6 +107,8 @@ namespace KnowledgeWarrior.UI
             }
             _questionManager = questionManager;
             _onBiomeSelected = onBiomeSelected;
+            _onHudLobbyButtonClicked = onHudLobbyButtonClicked;
+            _onSwitchToOnlineRequested = onSwitchToOnlineRequested;
             if (_questionManager != null)
             {
                 _questionManager.OnQuestionsLoaded += RefreshBiomeCards;
@@ -143,11 +154,18 @@ namespace KnowledgeWarrior.UI
 
             var options = BuildBiomeOptions();
             var p = ProgressManager.Current;
+            bool isOffline = OfflinePracticeManager.IsOfflinePracticeMode;
+            if (_goOnlineButton != null)
+            {
+                _goOnlineButton.gameObject.SetActive(isOffline && _onSwitchToOnlineRequested != null);
+            }
             if (_subtitleText != null)
             {
-                _subtitleText.text =
-                    $"Warrior: <color=#4DE1FF>{p.playerName}</color>   •   " +
-                    "Every subject starts at Level 1 and progresses one level at a time up to Level 100";
+                _subtitleText.text = isOffline
+                    ? "OFFLINE PRACTICE MODE  •  Study subject questions without signal (0 XP and 0 Coins awarded offline)"
+                    : $"Warrior: <color=#4DE1FF>{p.playerName}</color>   •   " +
+                      $"Coins: <color=#FFD24D>{p.coins}</color>   •   " +
+                      "Start at Level 1 and progress sequentially up to Level 100";
             }
 
             for (int i = 0; i < _cards.Count; i++)
@@ -166,6 +184,8 @@ namespace KnowledgeWarrior.UI
                 int nextXp = SubjectTierSystem.XpToNextSubjectLevel(sp.level);
                 Color badgeColor = SubjectTierSystem.GetBadgeColor(tier);
                 bool isSelected = string.Equals(opt.subjectFilter ?? string.Empty, _activeSubject ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+                SubjectBattleCheckpoint cp = null;
+                bool hasCheckpoint = !isOffline && SubjectCheckpointManager.TryGetCheckpoint(subjName, out cp) && cp != null;
 
                 c.root.SetActive(true);
                 c.border.color = isSelected ? opt.accentColor : new Color(opt.accentColor.r, opt.accentColor.g, opt.accentColor.b, 0.35f);
@@ -178,12 +198,16 @@ namespace KnowledgeWarrior.UI
                 c.levelBadgeText.text = $"LV {sp.level}/100  •  {SubjectTierSystem.GetBadgeName(tier).ToUpperInvariant()} BADGE";
                 c.levelBadgeText.color = badgeColor;
                 int unseenCount = _questionManager.CountUnseenForSubject(subjName);
-                c.topicsText.text = opt.topicsSummary;
-                c.countText.text = sp.level >= SubjectTierSystem.MaxLevel
-                    ? $"{unseenCount} Unseen Questions  •  {sp.points} PTS (MAX)"
-                    : $"{unseenCount} Unseen Questions  •  {sp.xp}/{nextXp} XP";
-                c.launchBtnBg.color = isSelected ? Green : opt.accentColor;
-                c.launchBtnText.text = "OPEN SUBJECT LOBBY";
+                c.topicsText.text = hasCheckpoint
+                    ? $"SAVED CHECKPOINT: Stage {cp.stageIndex + 1}/4\n{opt.topicsSummary}"
+                    : opt.topicsSummary;
+                c.countText.text = isOffline
+                    ? $"{opt.questionCount} Practice Questions Available"
+                    : (sp.level >= SubjectTierSystem.MaxLevel
+                        ? $"{unseenCount} Unseen Questions  •  {sp.points} PTS (MAX)"
+                        : $"{unseenCount} Unseen Questions  •  {sp.xp}/{nextXp} XP");
+                c.launchBtnBg.color = hasCheckpoint ? Gold : (isSelected ? Green : opt.accentColor);
+                c.launchBtnText.text = hasCheckpoint ? $"RESUME STAGE {cp.stageIndex + 1}/4" : "OPEN SUBJECT LOBBY";
 
                 var captured = opt;
                 c.button.onClick.RemoveAllListeners();
@@ -251,7 +275,11 @@ namespace KnowledgeWarrior.UI
             var hudBtn = CreateButton("BiomeSelectHudButton", safeArea, CardColor,
                 new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
                 new Vector2(20f, -16f), new Vector2(228f, 54f), "SUBJECT LOBBIES", 18, Gold);
-            hudBtn.onClick.AddListener(() => Show(allowClose: true));
+            hudBtn.onClick.AddListener(() =>
+            {
+                if (_onHudLobbyButtonClicked != null) _onHudLobbyButtonClicked.Invoke();
+                else Show(allowClose: true);
+            });
 
             var backdrop = CreateImage("Backdrop", rt, new Color(0.01f, 0.02f, 0.07f, 0.96f));
             Stretch(backdrop.rectTransform);
@@ -274,6 +302,17 @@ namespace KnowledgeWarrior.UI
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1),
                 new Vector2(-200, -18), new Vector2(160, 52), "SETTINGS", 20, Violet);
             settingsBtn.onClick.AddListener(() => SettingsModal.Instance?.Show());
+
+            _goOnlineButton = CreateButton("ConnectOnlineButton", w, Green,
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1),
+                new Vector2(-372, -18), new Vector2(200, 52), "CONNECT ONLINE", 18, DarkText);
+            _goOnlineButton.onClick.AddListener(() =>
+            {
+                BattleAudioManager.Instance?.PlayButtonClick();
+                Hide();
+                _onSwitchToOnlineRequested?.Invoke();
+            });
+            _goOnlineButton.gameObject.SetActive(false);
 
             _closeButton = CreateButton("CloseButton", w, new Color(1f, 0.36f, 0.48f, 1f),
                 new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1),

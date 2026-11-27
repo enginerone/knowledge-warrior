@@ -84,7 +84,7 @@ namespace KnowledgeWarrior.UI
             return modal;
         }
 
-        public void Show(AuthPage initialPage = AuthPage.Register)
+        public void Show(AuthPage initialPage = AuthPage.Register, string statusMessage = null)
         {
             if (_modalGroup == null) BuildRuntimeUI();
             if (_serverUrlInput != null)
@@ -95,7 +95,12 @@ namespace KnowledgeWarrior.UI
             }
             transform.SetAsLastSibling();
             ModalFx.Present(_modalGroup, true);
-            SwitchPage(initialPage, clearFeedback: true);
+            SwitchPage(initialPage, clearFeedback: string.IsNullOrWhiteSpace(statusMessage));
+            if (!string.IsNullOrWhiteSpace(statusMessage) && _feedbackText != null)
+            {
+                _feedbackText.color = Gold;
+                _feedbackText.text = statusMessage;
+            }
         }
 
         private void OnEnable()

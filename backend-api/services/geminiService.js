@@ -234,8 +234,8 @@ async function generateSubjectCurriculumQuestions(options = {}) {
   const existingQuestions = Array.isArray(options.existingQuestions) ? options.existingQuestions : [];
 
   const tierDescription = {
-    1: 'Beginner Tier (Levels 1-15): foundational definitions, basic syntax, and core principles',
-    2: 'Intermediate Tier (Levels 16-30): applied problem solving, code tracing, and standard mechanisms',
+    1: 'Beginner Tier (Levels 1-15): very approachable introductory concepts, everyday terminology, simple syntax recognition, and gentle foundational checks suitable for first-time learners (avoid obscure protocol internals or trick edge cases)',
+    2: 'Intermediate Tier (Levels 16-30): applied problem solving, short code tracing, and standard practical mechanisms',
     3: 'Advanced Tier (Levels 31-60): architectural trade-offs, performance analysis, and subtle edge cases',
     4: 'Expert Tier (Levels 61-100): deep internals, distributed or low-level behavior, and complex debugging',
   }[difficulty];

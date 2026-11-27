@@ -24,6 +24,7 @@ namespace KnowledgeWarrior.Data
         private readonly Dictionary<string, Queue<QuestionData>> _decks = new();
         private readonly HashSet<string> _seenQuestionIds = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _seenNormalizedTexts = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _offlinePracticeSeenIds = new(StringComparer.OrdinalIgnoreCase);
         private readonly Random _rng = new();
 
         public int Count => _questions.Count;
@@ -61,7 +62,32 @@ namespace KnowledgeWarrior.Data
         {
             _seenQuestionIds.Clear();
             _seenNormalizedTexts.Clear();
+            _offlinePracticeSeenIds.Clear();
             _decks.Clear();
+        }
+
+        public void ResetOfflinePracticeSeen()
+        {
+            _offlinePracticeSeenIds.Clear();
+        }
+
+        public bool ApplyOfflinePracticeQuestionsJson(string json, out string error)
+        {
+            if (!TryParse(json, out var bank, out error))
+            {
+                return false;
+            }
+
+            Apply(bank, "offline-practice");
+            return true;
+        }
+
+        public QuestionData GetQuestionById(string questionId)
+        {
+            if (string.IsNullOrWhiteSpace(questionId)) return null;
+            var match = _questions.FirstOrDefault(q => string.Equals(q.id, questionId.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (match == null) return null;
+            return shuffleChoices ? match.CreateShuffledCopy(_rng) : match;
         }
 
         public void SetSeenQuestionIds(IEnumerable<string> questionIds, bool resetExisting = false)
@@ -155,6 +181,120 @@ namespace KnowledgeWarrior.Data
         {
             int exactTierDifficulty = SubjectTierSystem.GetAlignedQuestionDifficulty(subjectLevel);
             return GetNextQuestion(subject, exactTierDifficulty, exactDifficultyOnly: true);
+        }
+
+        /// <summary>
+        /// Draws a question aligned to subject, subject level tier, and battle stage (Stages 1 to 4).
+        /// Stage 1 and 2 prioritize introductory questions in the tier, Stage 3 selects mid-tier items,
+        /// and Stage 4 (Boss) selects deeper items in the tier. In offline practice mode, live online
+        /// seen IDs are never mutated.
+        /// </summary>
+        public QuestionData GetQuestionForSubjectLevelAndStage(
+            string subject,
+            int subjectLevel,
+            int stageIndex,
+            bool isOfflinePractice = false)
+        {
+            if (_questions.Count == 0 || string.IsNullOrWhiteSpace(subject)) return null;
+
+            string trimmedSubject = subject.Trim();
+            int targetDifficulty = SubjectTierSystem.GetAlignedQuestionDifficulty(subjectLevel);
+
+            List<QuestionData> pool;
+            if (isOfflinePractice)
+            {
+                pool = _questions.Where(q =>
+                    string.Equals(q.subject, trimmedSubject, StringComparison.OrdinalIgnoreCase) &&
+                    q.difficulty == targetDifficulty &&
+                    !_offlinePracticeSeenIds.Contains(q.id ?? string.Empty)).ToList();
+
+                if (pool.Count == 0)
+                {
+                    pool = _questions.Where(q =>
+                        string.Equals(q.subject, trimmedSubject, StringComparison.OrdinalIgnoreCase) &&
+                        q.difficulty == targetDifficulty).ToList();
+
+                    foreach (var q in pool)
+                    {
+                        if (!string.IsNullOrWhiteSpace(q.id)) _offlinePracticeSeenIds.Remove(q.id);
+                    }
+                }
+            }
+            else
+            {
+                pool = _questions.Where(q =>
+                    string.Equals(q.subject, trimmedSubject, StringComparison.OrdinalIgnoreCase) &&
+                    q.difficulty == targetDifficulty &&
+                    !IsQuestionSeen(q)).ToList();
+            }
+
+            if (pool.Count == 0)
+            {
+                return null;
+            }
+
+            var ordered = pool
+                .OrderBy(ComputeQuestionStageComplexity)
+                .ThenBy(_ => _rng.Next())
+                .ToList();
+
+            int clampedStage = Mathf.Clamp(stageIndex, 0, 3);
+            int bandStart = 0;
+            int bandCount = ordered.Count;
+
+            if (ordered.Count >= 4)
+            {
+                if (clampedStage <= 1)
+                {
+                    bandStart = 0;
+                    bandCount = Mathf.Max(1, ordered.Count / 2);
+                }
+                else if (clampedStage == 2)
+                {
+                    bandStart = ordered.Count / 4;
+                    bandCount = Mathf.Max(1, ordered.Count / 2);
+                }
+                else
+                {
+                    bandStart = ordered.Count / 2;
+                    bandCount = Mathf.Max(1, ordered.Count - bandStart);
+                }
+            }
+
+            int pickIdx = bandStart + _rng.Next(Mathf.Max(1, bandCount));
+            pickIdx = Mathf.Clamp(pickIdx, 0, ordered.Count - 1);
+            var selected = ordered[pickIdx];
+
+            if (isOfflinePractice)
+            {
+                if (!string.IsNullOrWhiteSpace(selected.id))
+                {
+                    _offlinePracticeSeenIds.Add(selected.id.Trim());
+                }
+            }
+            else
+            {
+                MarkQuestionSeenLocally(selected);
+            }
+
+            return shuffleChoices ? selected.CreateShuffledCopy(_rng) : selected;
+        }
+
+        private static int ComputeQuestionStageComplexity(QuestionData q)
+        {
+            if (q == null) return 0;
+            string mode = (q.questionType ?? "multiple_choice").Trim().ToLowerInvariant();
+            int modeWeight = mode switch
+            {
+                "true_false" => 10,
+                "multiple_choice" => 20,
+                "fill_blank" => 35,
+                "ordering" => 50,
+                "spot_bug" => 65,
+                _ => 25
+            };
+            int lengthWeight = Mathf.Min(40, (q.question?.Length ?? 0) / 5);
+            return modeWeight + lengthWeight;
         }
 
         public QuestionData GetNextQuestion(string subject, int targetDifficulty = 1, bool exactDifficultyOnly = true)
