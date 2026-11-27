@@ -5,8 +5,10 @@ const { triggerBackgroundReplenishIfLow } = require('../services/questionRepleni
 const {
   DEFAULT_SUBJECTS,
   MAX_BATTLE_XP_AWARD,
+  STAGE_WIN_COIN_REWARD,
   xpToNextSubjectLevel,
   getBadgeTierForLevel,
+  getReviveCoinCostForLevel,
   calculateGlobalLevel,
   applySequentialSubjectXp,
   buildDefaultSubjectRow,
@@ -41,6 +43,7 @@ async function fetchUserSummaryAndRank(client, userId) {
             GREATEST(1, COALESCE(current_level, 1))::int AS "currentLevel",
             COALESCE(battles_won, 0)::int AS "battlesWon",
             COALESCE(battles_lost, 0)::int AS "battlesLost",
+            GREATEST(0, COALESCE(coins, 0))::int AS "coins",
             COALESCE(is_banned, false) AS "isBanned"
      FROM users
      WHERE id = $1`,
@@ -92,6 +95,7 @@ router.get('/subject-progress', authenticateToken, async (req, res, next) => {
     }
 
     await ensureUserDefaultSubjects(client, req.user.id);
+    await client.query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [req.user.id]);
 
     const result = await client.query(
       `SELECT subject,
@@ -99,6 +103,10 @@ router.get('/subject-progress', authenticateToken, async (req, res, next) => {
               COALESCE(subject_xp, 0)::int AS "subjectXp",
               COALESCE(subject_points, 0)::int AS "subjectPoints",
               badge_tier AS "badgeTier",
+              COALESCE(saved_stage_index, 0)::int AS "savedStageIndex",
+              COALESCE(saved_player_hp, 0)::int AS "savedPlayerHp",
+              COALESCE(saved_enemy_hp, 0)::int AS "savedEnemyHp",
+              COALESCE(has_active_checkpoint, false) AS "hasActiveCheckpoint",
               updated_at AS "updatedAt"
        FROM user_subject_progress
        WHERE user_id = $1
@@ -127,6 +135,11 @@ router.get('/subject-progress', authenticateToken, async (req, res, next) => {
         subjectPoints: Math.max(0, row.subjectPoints || 0),
         xpToNextLevel: xpToNextSubjectLevel(lv),
         badgeTier: getBadgeTierForLevel(lv),
+        reviveCoinCost: getReviveCoinCostForLevel(lv),
+        savedStageIndex: Math.max(0, Math.min(3, row.savedStageIndex || 0)),
+        savedPlayerHp: Math.max(0, row.savedPlayerHp || 0),
+        savedEnemyHp: Math.max(0, row.savedEnemyHp || 0),
+        hasActiveCheckpoint: Boolean(row.hasActiveCheckpoint),
         updatedAt: row.updatedAt,
       };
     });
@@ -150,9 +163,12 @@ router.post('/battle', authenticateToken, async (req, res, next) => {
   try {
     const subject = String(req.body.subject || 'Programming').trim() || 'Programming';
     const victory = Boolean(req.body.victory);
+    const stageIndex = Math.max(0, Math.min(3, parseInt(req.body.stageIndex, 10) || 0));
+    const clearCheckpoint = Boolean(req.body.clearCheckpoint);
     const totalAnswers = Math.max(0, Math.min(50, parseInt(req.body.totalAnswers, 10) || 0));
     const correctAnswers = Math.max(0, Math.min(totalAnswers, parseInt(req.body.correctAnswers, 10) || 0));
     const xpGained = Math.max(0, Math.min(MAX_BATTLE_XP_AWARD, parseInt(req.body.xpGained, 10) || 0));
+    const coinsEarned = victory ? STAGE_WIN_COIN_REWARD : 0;
     const answerLogs = Array.isArray(req.body.answerLogs) ? req.body.answerLogs : [];
 
     await client.query('BEGIN');
@@ -195,15 +211,34 @@ router.post('/battle', authenticateToken, async (req, res, next) => {
       xpGained
     );
 
+    let nextSavedStage = 0;
+    let nextHasCheckpoint = false;
+    if (!clearCheckpoint) {
+      if (victory && stageIndex < 3) {
+        nextSavedStage = stageIndex + 1;
+        nextHasCheckpoint = true;
+      } else if (!victory) {
+        nextSavedStage = stageIndex;
+        nextHasCheckpoint = true;
+      }
+    }
+
     await client.query(
-      `INSERT INTO user_subject_progress (user_id, subject, subject_level, subject_xp, subject_points, badge_tier, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `INSERT INTO user_subject_progress (
+         user_id, subject, subject_level, subject_xp, subject_points, badge_tier,
+         saved_stage_index, saved_player_hp, saved_enemy_hp, has_active_checkpoint, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 0, $8, NOW())
        ON CONFLICT (user_id, subject)
        DO UPDATE SET
          subject_level = EXCLUDED.subject_level,
          subject_xp = EXCLUDED.subject_xp,
          subject_points = EXCLUDED.subject_points,
          badge_tier = EXCLUDED.badge_tier,
+         saved_stage_index = EXCLUDED.saved_stage_index,
+         saved_player_hp = 0,
+         saved_enemy_hp = 0,
+         has_active_checkpoint = EXCLUDED.has_active_checkpoint,
          updated_at = NOW()`,
       [
         req.user.id,
@@ -212,6 +247,8 @@ router.post('/battle', authenticateToken, async (req, res, next) => {
         nextSubj.subjectXp,
         nextSubj.subjectPoints,
         nextSubj.badgeTier,
+        nextSavedStage,
+        nextHasCheckpoint,
       ]
     );
 
@@ -253,9 +290,11 @@ router.post('/battle', authenticateToken, async (req, res, next) => {
            current_level = $2,
            battles_won = COALESCE(battles_won, 0) + $3,
            battles_lost = COALESCE(battles_lost, 0) + $4,
-           last_synced_at = NOW()
-       WHERE id = $5`,
-      [updatedTotalXp, updatedGlobalLevel, victory ? 1 : 0, victory ? 0 : 1, req.user.id]
+           coins = GREATEST(0, COALESCE(coins, 0)) + $5,
+           last_synced_at = NOW(),
+           last_active_at = NOW()
+       WHERE id = $6`,
+      [updatedTotalXp, updatedGlobalLevel, victory ? 1 : 0, victory ? 0 : 1, coinsEarned, req.user.id]
     );
 
     const playerSummary = await fetchUserSummaryAndRank(client, req.user.id);
@@ -267,10 +306,14 @@ router.post('/battle', authenticateToken, async (req, res, next) => {
 
     res.json({
       status: 'success',
+      coinsEarned,
+      reviveCoinCost: getReviveCoinCostForLevel(nextSubj.subjectLevel),
       player: playerSummary,
       subjectProgress: {
         subject,
         ...nextSubj,
+        savedStageIndex: nextSavedStage,
+        hasActiveCheckpoint: nextHasCheckpoint,
       },
     });
   } catch (err) {
@@ -407,6 +450,152 @@ router.post('/progress', authenticateToken, async (req, res, next) => {
       currentLevel: newLevel,
       totalXp: currentXp,
       globalRank: summary?.globalRank || 1,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/v1/sync/revive - Spend coins aligned to Subject Badge Tier to revive on the stage where the hero died
+router.post('/revive', authenticateToken, async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    const subject = String(req.body.subject || 'Programming').trim() || 'Programming';
+    const stageIndex = Math.max(0, Math.min(3, parseInt(req.body.stageIndex, 10) || 0));
+
+    await client.query('BEGIN');
+
+    const userRes = await client.query(
+      `SELECT id,
+              GREATEST(0, COALESCE(coins, 0))::int AS coins,
+              COALESCE(is_banned, false) AS is_banned
+       FROM users
+       WHERE id = $1
+       FOR UPDATE`,
+      [req.user.id]
+    );
+
+    if (userRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Authenticated user account was not found.' });
+    }
+    if (userRes.rows[0].is_banned) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'This account has been disabled by an administrator.' });
+    }
+
+    await ensureUserDefaultSubjects(client, req.user.id);
+
+    const subjRes = await client.query(
+      `SELECT GREATEST(1, COALESCE(subject_level, 1))::int AS subject_level
+       FROM user_subject_progress
+       WHERE user_id = $1 AND LOWER(subject) = LOWER($2)
+       FOR UPDATE`,
+      [req.user.id, subject]
+    );
+
+    const subjectLevel = subjRes.rows[0]?.subject_level || 1;
+    const requiredCoins = getReviveCoinCostForLevel(subjectLevel);
+    const currentCoins = userRes.rows[0].coins;
+
+    if (currentCoins < requiredCoins) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: `Insufficient coins to revive on Stage ${stageIndex + 1}. Required: ${requiredCoins} coins, available: ${currentCoins} coins.`,
+        requiredCoins,
+        currentCoins,
+      });
+    }
+
+    const remainingCoins = currentCoins - requiredCoins;
+
+    await client.query(
+      `UPDATE users
+       SET coins = $1,
+           last_active_at = NOW(),
+           last_synced_at = NOW()
+       WHERE id = $2`,
+      [remainingCoins, req.user.id]
+    );
+
+    await client.query(
+      `UPDATE user_subject_progress
+       SET saved_stage_index = $1,
+           saved_player_hp = 0,
+           saved_enemy_hp = 0,
+           has_active_checkpoint = true,
+           updated_at = NOW()
+       WHERE user_id = $2 AND LOWER(subject) = LOWER($3)`,
+      [stageIndex, req.user.id, subject]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      status: 'revived',
+      subject,
+      badgeTier: getBadgeTierForLevel(subjectLevel),
+      coinsSpent: requiredCoins,
+      remainingCoins,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/v1/sync/checkpoint - Save or clear a per-subject battle checkpoint
+router.post('/checkpoint', authenticateToken, async (req, res, next) => {
+  const client = await db.pool.connect();
+  try {
+    const subject = String(req.body.subject || 'Programming').trim() || 'Programming';
+    const stageIndex = Math.max(0, Math.min(3, parseInt(req.body.stageIndex, 10) || 0));
+    const playerHp = Math.max(0, parseInt(req.body.playerHp, 10) || 0);
+    const enemyHp = Math.max(0, parseInt(req.body.enemyHp, 10) || 0);
+    const hasActiveCheckpoint = Boolean(req.body.hasActiveCheckpoint);
+
+    await client.query('BEGIN');
+    await ensureUserDefaultSubjects(client, req.user.id);
+
+    await client.query(
+      `UPDATE users
+       SET last_active_at = NOW()
+       WHERE id = $1`,
+      [req.user.id]
+    );
+
+    await client.query(
+      `UPDATE user_subject_progress
+       SET saved_stage_index = $1,
+           saved_player_hp = $2,
+           saved_enemy_hp = $3,
+           has_active_checkpoint = $4,
+           updated_at = NOW()
+       WHERE user_id = $5 AND LOWER(subject) = LOWER($6)`,
+      [
+        hasActiveCheckpoint ? stageIndex : 0,
+        hasActiveCheckpoint ? playerHp : 0,
+        hasActiveCheckpoint ? enemyHp : 0,
+        hasActiveCheckpoint,
+        req.user.id,
+        subject,
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      status: 'saved',
+      subject,
+      savedStageIndex: hasActiveCheckpoint ? stageIndex : 0,
+      savedPlayerHp: hasActiveCheckpoint ? playerHp : 0,
+      savedEnemyHp: hasActiveCheckpoint ? enemyHp : 0,
+      hasActiveCheckpoint,
     });
   } catch (err) {
     await client.query('ROLLBACK');

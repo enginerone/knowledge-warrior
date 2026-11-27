@@ -24,6 +24,8 @@ namespace KnowledgeWarrior.Progress
         public string subject;
         public int xpGained;
         public bool victory;
+        public int stageIndex;
+        public bool clearCheckpoint;
         public int correctAnswers;
         public int totalAnswers;
         public BattleAnswerLogDto[] answerLogs;
@@ -76,11 +78,14 @@ namespace KnowledgeWarrior.Progress
         public string LastError { get; private set; }
 
         public event Action<bool, string> OnOnlineAvailabilityChanged;
+        public event Action OnOnlineSignalRestored;
         public event Action OnSyncStarted;
         public event Action<bool> OnSyncFinished;
 
         private bool _wasOnline;
         private float _nextCheckTime;
+        private bool _probeSignalInFlight;
+        private bool _signalRestoredNotified;
 
         public string EffectiveApiBaseUrl =>
             ResolveApiBaseUrl(IsLocalDevelopmentEnvironment ? apiBaseUrl : cloudProductionApiUrl);
@@ -273,11 +278,48 @@ namespace KnowledgeWarrior.Progress
             if (!onlineNow && (_wasOnline || IsServerConnected))
             {
                 _wasOnline = false;
-                ReportConnectionLost("Internet data connection was lost. Reconnect to Wi-Fi or mobile data to continue playing.");
+                _signalRestoredNotified = false;
+                IsServerConnected = false;
+                if (!OfflinePracticeManager.IsOfflinePracticeMode)
+                {
+                    ReportConnectionLost("Internet data connection was lost. Reconnect to Wi-Fi or mobile data to continue playing.");
+                }
                 return;
             }
 
+            if (onlineNow && OfflinePracticeManager.IsOfflinePracticeMode && !_probeSignalInFlight && !_signalRestoredNotified)
+            {
+                StartCoroutine(ProbeOnlineSignalRestoredRoutine());
+            }
+
             _wasOnline = onlineNow;
+        }
+
+        private IEnumerator ProbeOnlineSignalRestoredRoutine()
+        {
+            _probeSignalInFlight = true;
+            UnityWebRequest healthReq = UnityWebRequest.Get($"{EffectiveApiBaseUrl}/health");
+            healthReq.timeout = Mathf.Min(requestTimeoutSeconds, 5);
+            yield return SendGetWithLocalhostFallbackRoutine(healthReq, "/health", r => healthReq = r);
+
+            bool reachable = false;
+            using (healthReq)
+            {
+                reachable = healthReq.result == UnityWebRequest.Result.Success;
+            }
+
+            _probeSignalInFlight = false;
+            if (reachable && OfflinePracticeManager.IsOfflinePracticeMode && !_signalRestoredNotified)
+            {
+                _signalRestoredNotified = true;
+                IsServerConnected = true;
+                OnOnlineSignalRestored?.Invoke();
+            }
+        }
+
+        public void ResetSignalRestoredNotification()
+        {
+            _signalRestoredNotified = false;
         }
 
         public void ReportConnectionLost(string reason)
@@ -353,8 +395,11 @@ namespace KnowledgeWarrior.Progress
                     onComplete?.Invoke(false, err);
                     yield break;
                 }
+
+                OfflinePracticeManager.SaveOfflinePracticeQuestionBank(responseJson);
             }
 
+            _signalRestoredNotified = false;
             IsSyncing = false;
             IsServerConnected = true;
             LastError = null;
@@ -428,7 +473,8 @@ namespace KnowledgeWarrior.Progress
                         res.player.battlesWon,
                         res.player.battlesLost,
                         res.player.questionsAnswered,
-                        res.player.correctAnswers);
+                        res.player.correctAnswers,
+                        res.player.coins);
                 }
 
                 int levelsGained = 0;
@@ -454,6 +500,111 @@ namespace KnowledgeWarrior.Progress
                 OnSyncFinished?.Invoke(false);
                 onComplete?.Invoke(false, err, 0);
             }
+        }
+
+        public IEnumerator SpendCoinsForReviveOnlineRoutine(
+            string subject,
+            int stageIndex,
+            Action<bool, string, int> onComplete)
+        {
+            if (!IsOnline)
+            {
+                string msg = "Internet connection required to spend coins and revive.";
+                ReportConnectionLost(msg);
+                onComplete?.Invoke(false, msg, ProgressManager.Current.coins);
+                yield break;
+            }
+
+            var payload = new ReviveRequestDto
+            {
+                subject = subject,
+                stageIndex = stageIndex
+            };
+
+            using var req = new UnityWebRequest($"{EffectiveApiBaseUrl}/sync/revive", UnityWebRequest.kHttpVerbPOST);
+            byte[] bodyBytes = Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload));
+            req.uploadHandler = new UploadHandlerRaw(bodyBytes);
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.timeout = requestTimeoutSeconds;
+            req.SetRequestHeader("Content-Type", "application/json");
+            AttachAuthHeaderIfPresent(req);
+
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.ConnectionError ||
+                req.result == UnityWebRequest.Result.DataProcessingError)
+            {
+                string err = $"Lost connection while processing coin revive: {req.error}";
+                ReportConnectionLost(err);
+                onComplete?.Invoke(false, err, ProgressManager.Current.coins);
+                yield break;
+            }
+
+            string responseText = req.downloadHandler?.text ?? string.Empty;
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                string errMsg = null;
+                try
+                {
+                    errMsg = JsonUtility.FromJson<ErrorDto>(responseText)?.error;
+                }
+                catch
+                {
+                    // Ignore JSON parse fallback
+                }
+                onComplete?.Invoke(false, errMsg ?? $"Unable to revive ({req.responseCode}).", ProgressManager.Current.coins);
+                yield break;
+            }
+
+            try
+            {
+                var res = JsonUtility.FromJson<ReviveResponseDto>(responseText);
+                ProgressManager.SetCoins(res.remainingCoins);
+                onComplete?.Invoke(true, null, res.remainingCoins);
+            }
+            catch (Exception e)
+            {
+                onComplete?.Invoke(false, $"Failed to parse revive response: {e.Message}", ProgressManager.Current.coins);
+            }
+        }
+
+        public void SaveSubjectCheckpointOnline(
+            string subject,
+            int stageIndex,
+            int playerHp,
+            int enemyHp,
+            bool hasActiveCheckpoint)
+        {
+            if (!isActiveAndEnabled || !IsOnline || OfflinePracticeManager.IsOfflinePracticeMode) return;
+            string token = PlayerPrefs.GetString(AuthTokenPrefKey, string.Empty);
+            if (string.IsNullOrWhiteSpace(token)) return;
+            StartCoroutine(SaveSubjectCheckpointRoutine(subject, stageIndex, playerHp, enemyHp, hasActiveCheckpoint));
+        }
+
+        private IEnumerator SaveSubjectCheckpointRoutine(
+            string subject,
+            int stageIndex,
+            int playerHp,
+            int enemyHp,
+            bool hasActiveCheckpoint)
+        {
+            var payload = new CheckpointRequestDto
+            {
+                subject = subject,
+                stageIndex = stageIndex,
+                playerHp = playerHp,
+                enemyHp = enemyHp,
+                hasActiveCheckpoint = hasActiveCheckpoint
+            };
+
+            using var req = new UnityWebRequest($"{EffectiveApiBaseUrl}/sync/checkpoint", UnityWebRequest.kHttpVerbPOST);
+            byte[] bodyBytes = Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload));
+            req.uploadHandler = new UploadHandlerRaw(bodyBytes);
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.timeout = requestTimeoutSeconds;
+            req.SetRequestHeader("Content-Type", "application/json");
+            AttachAuthHeaderIfPresent(req);
+            yield return req.SendWebRequest();
         }
 
         public void ForceSyncAll(Action<bool, string> onComplete = null)
@@ -627,6 +778,8 @@ namespace KnowledgeWarrior.Progress
         private class BattleSyncResponseDto
         {
             public string status;
+            public int coinsEarned;
+            public int reviveCoinCost;
             public ServerPlayerSummaryDto player;
             public ServerSubjectProgressDto subjectProgress;
         }
@@ -643,6 +796,7 @@ namespace KnowledgeWarrior.Progress
             public int battlesLost;
             public int questionsAnswered;
             public int correctAnswers;
+            public int coins;
         }
 
         [Serializable]
@@ -655,6 +809,39 @@ namespace KnowledgeWarrior.Progress
             public int xpToNextLevel;
             public string badgeTier;
             public int levelsGained;
+            public int savedStageIndex;
+            public bool hasActiveCheckpoint;
+        }
+
+        [Serializable]
+        private class ReviveRequestDto
+        {
+            public string subject;
+            public int stageIndex;
+        }
+
+        [Serializable]
+        private class ReviveResponseDto
+        {
+            public string status;
+            public int coinsSpent;
+            public int remainingCoins;
+        }
+
+        [Serializable]
+        private class CheckpointRequestDto
+        {
+            public string subject;
+            public int stageIndex;
+            public int playerHp;
+            public int enemyHp;
+            public bool hasActiveCheckpoint;
+        }
+
+        [Serializable]
+        private class ErrorDto
+        {
+            public string error;
         }
     }
 }

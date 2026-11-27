@@ -109,7 +109,36 @@ namespace KnowledgeWarrior.Combat
             float ratio = MaxHp > 0 ? (float)CurrentHp / MaxHp : 1f;
             MaxHp = Mathf.Max(1, maxHp);
             Attack = attack;
-            CurrentHp = fullHeal ? MaxHp : Mathf.Max(1, Mathf.RoundToInt(MaxHp * ratio));
+            if (IsDead && !fullHeal)
+            {
+                CurrentHp = 0;
+            }
+            else
+            {
+                CurrentHp = fullHeal ? MaxHp : Mathf.Max(1, Mathf.RoundToInt(MaxHp * ratio));
+            }
+            if (fullHeal && _visual != null)
+            {
+                _visual.gameObject.SetActive(true);
+                _visual.localScale = _visualBaseScale;
+                _visual.localRotation = Quaternion.identity;
+                if (spriteRenderer != null) spriteRenderer.color = _baseColor;
+                _idle = true;
+            }
+            OnHealthChanged?.Invoke(CurrentHp, MaxHp);
+        }
+
+        public void SetCurrentHp(int hp)
+        {
+            CurrentHp = Mathf.Clamp(hp, 0, Mathf.Max(1, MaxHp));
+            if (CurrentHp > 0 && _visual != null)
+            {
+                _visual.gameObject.SetActive(true);
+                _visual.localScale = _visualBaseScale;
+                _visual.localRotation = Quaternion.identity;
+                if (spriteRenderer != null) spriteRenderer.color = _baseColor;
+                _idle = true;
+            }
             OnHealthChanged?.Invoke(CurrentHp, MaxHp);
         }
 

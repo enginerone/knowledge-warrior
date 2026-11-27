@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { authenticateToken, JWT_SECRET } = require('../middleware/auth');
 const { sendPasswordResetOtpEmail } = require('../services/emailService');
-const { DEFAULT_SUBJECTS } = require('../services/progressionService');
+const { DEFAULT_SUBJECTS, INACTIVITY_TIMEOUT_SECONDS } = require('../services/progressionService');
 
 const router = express.Router();
 
@@ -247,9 +247,9 @@ router.post('/register', async (req, res, next) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await client.query(
-      `INSERT INTO users (username, email, password_hash, role, total_xp, current_level, battles_won, battles_lost)
-       VALUES ($1, $2, $3, 'player', 0, 1, 0, 0)
-       RETURNING id, username, email, role, total_xp, current_level, created_at`,
+      `INSERT INTO users (username, email, password_hash, role, total_xp, current_level, battles_won, battles_lost, coins, last_active_at)
+       VALUES ($1, $2, $3, 'player', 0, 1, 0, 0, 0, NOW())
+       RETURNING id, username, email, role, total_xp, current_level, coins, created_at`,
       [rawUsername, rawEmail, passwordHash]
     );
     const user = result.rows[0];
@@ -281,6 +281,7 @@ router.post('/register', async (req, res, next) => {
         role: user.role,
         totalXp: 0,
         currentLevel: 1,
+        coins: 0,
         createdAt: user.created_at,
       },
     });
@@ -338,7 +339,7 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ error: hint });
     }
 
-    await db.query('UPDATE users SET last_synced_at = NOW() WHERE id = $1', [user.id]);
+    await db.query('UPDATE users SET last_synced_at = NOW(), last_active_at = NOW() WHERE id = $1', [user.id]);
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
@@ -358,6 +359,7 @@ router.post('/login', async (req, res, next) => {
         currentLevel: Math.max(1, user.current_level || 1),
         battlesWon: user.battles_won || 0,
         battlesLost: user.battles_lost || 0,
+        coins: Math.max(0, user.coins || 0),
       },
     });
   } catch (err) {
@@ -657,9 +659,11 @@ router.get('/me', authenticateToken, async (req, res, next) => {
               GREATEST(1, COALESCE(current_level, 1))::int AS "currentLevel",
               COALESCE(battles_won, 0)::int AS "battlesWon",
               COALESCE(battles_lost, 0)::int AS "battlesLost",
+              GREATEST(0, COALESCE(coins, 0))::int AS "coins",
               COALESCE(is_banned, false) AS is_banned,
               created_at,
-              last_synced_at
+              last_synced_at,
+              last_active_at
        FROM users
        WHERE id = $1`,
       [req.user.id]
@@ -669,11 +673,27 @@ router.get('/me', authenticateToken, async (req, res, next) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    if (result.rows[0].is_banned) {
+    const userRow = result.rows[0];
+    if (userRow.is_banned) {
       return res.status(403).json({ error: 'This account has been banned (disabled) by an administrator.' });
     }
 
-    res.json({ user: result.rows[0] });
+    if (userRow.role === 'player') {
+      const referenceTimestamp = userRow.last_active_at || userRow.last_synced_at;
+      if (referenceTimestamp) {
+        const elapsedSeconds = (Date.now() - new Date(referenceTimestamp).getTime()) / 1000;
+        if (elapsedSeconds >= INACTIVITY_TIMEOUT_SECONDS) {
+          return res.status(401).json({
+            error: 'Your session expired after 1 hour of inactivity. Please sign in again.',
+            code: 'SESSION_INACTIVE_EXPIRED',
+          });
+        }
+      }
+    }
+
+    await db.query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [req.user.id]);
+
+    res.json({ user: userRow });
   } catch (err) {
     next(err);
   }

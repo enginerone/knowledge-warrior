@@ -18,15 +18,18 @@ namespace KnowledgeWarrior.Progress
         public int level = 1;
         public int xp = 0;
         public int points = 0;
+        public int reviveCoinCost = 30;
     }
 
     /// <summary>
-    /// Central authority for per-subject levels (1 to 100), tier badges, and aligned question difficulty.
+    /// Central authority for per-subject levels (1 to 100), tier badges, aligned question difficulty,
+    /// and coin economy values.
     /// </summary>
     public static class SubjectTierSystem
     {
         public const int MinLevel = 1;
         public const int MaxLevel = 100;
+        public const int StageWinCoinReward = 15;
 
         private static readonly Color BeginnerColor = new(0.24f, 0.90f, 0.63f, 1f);
         private static readonly Color IntermediateColor = new(0.30f, 0.88f, 1f, 1f);
@@ -96,5 +99,17 @@ namespace KnowledgeWarrior.Progress
             int clamped = Mathf.Clamp(level, MinLevel, MaxLevel);
             return 80 + (clamped - 1) * 25;
         }
+
+        public static int GetReviveCoinCost(BadgeTier tier) => tier switch
+        {
+            BadgeTier.Beginner => 30,
+            BadgeTier.Intermediate => 50,
+            BadgeTier.Advanced => 70,
+            BadgeTier.Expert => 100,
+            _ => 30
+        };
+
+        public static int GetReviveCoinCostForLevel(int level) =>
+            GetReviveCoinCost(GetTierForLevel(level));
     }
 }

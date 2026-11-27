@@ -52,13 +52,15 @@ namespace KnowledgeWarrior.UI
 
         private Image _monsterModeCardBorder;
         private Button _fightMonstersBtn;
+        private TMP_Text _fightMonstersBtnLabel;
+        private Button _restartStage1Btn;
         private TMP_Text _rosterHeaderText;
         private TMP_Text _rosterSubheaderText;
         private readonly List<MonsterStageRowWidgets> _stageRows = new();
 
         private string _currentBiomeTitle = "Citadel of Code";
         private string _currentSubject = "Programming";
-        private Action<string, string> _onStartMonsterRun;
+        private Action<string, string, bool> _onStartMonsterRun;
 
         private class MonsterStageRowWidgets
         {
@@ -71,7 +73,7 @@ namespace KnowledgeWarrior.UI
 
         public static SubjectLobbyModal EnsureOnCanvas(
             Canvas canvas,
-            Action<string, string> onStartMonsterRun)
+            Action<string, string, bool> onStartMonsterRun)
         {
             var existing = canvas.GetComponentInChildren<SubjectLobbyModal>(true);
             if (existing != null)
@@ -136,18 +138,22 @@ namespace KnowledgeWarrior.UI
             _badgePillText.text = SubjectTierSystem.GetBadgeEmblemText(lv);
 
             int nextXp = SubjectTierSystem.XpToNextSubjectLevel(lv);
-            _playerStatsText.text =
-                $"Warrior: <color=#4DE1FF>{p.playerName}</color>   •   " +
-                $"Subject Level: <color=#FFD24D>LV {lv}/100</color> ({SubjectTierSystem.GetBadgeName(tier)} Badge)   •   " +
-                $"Total Subject Points: <color=#3EE6A0>{sp.points} PTS</color>";
+            int reviveCost = SubjectTierSystem.GetReviveCoinCostForLevel(lv);
+            bool isOffline = OfflinePracticeManager.IsOfflinePracticeMode;
+            _playerStatsText.text = isOffline
+                ? $"OFFLINE PRACTICE   •   Subject Level: <color=#FFD24D>LV {lv}/100</color> ({SubjectTierSystem.GetBadgeName(tier)} Badge)"
+                : $"Warrior: <color=#4DE1FF>{p.playerName}</color>   •   " +
+                  $"Coins: <color=#FFD24D>{p.coins}</color>   •   " +
+                  $"LV {lv}/100 ({SubjectTierSystem.GetBadgeName(tier)})   •   " +
+                  $"<color=#3EE6A0>{sp.points} PTS</color>";
 
             _questionAlignmentText.text =
-                $"Aligned Question Pool: Strictly <color=#FFD24D>{SubjectTierSystem.GetBadgeName(tier)} Tier (Difficulty {(int)tier})</color> " +
-                $"live server questions for {_currentSubject} across all 5 combat question modes.";
+                $"Aligned Pool: <color=#FFD24D>{SubjectTierSystem.GetBadgeName(tier)} Tier (Difficulty {(int)tier})</color> " +
+                $"for {_currentSubject}  •  Stage Win: +{SubjectTierSystem.StageWinCoinReward} Coins  •  Revive Cost: {reviveCost} Coins";
 
             if (lv >= SubjectTierSystem.MaxLevel)
             {
-                _levelProgressLabelText.text = "MAXIMUM SUBJECT LEVEL REACHED (LV 100 EXPERT TIER)";
+                _levelProgressLabelText.text = "EXPERT LEVEL 100 MASTERED! Clearing stages still awards +15 Coins, Subject Points, and Leaderboard XP.";
                 SetFill(_levelProgressFill, 1f);
             }
             else
@@ -163,9 +169,32 @@ namespace KnowledgeWarrior.UI
             }
 
             _monsterModeCardBorder.color = tierColor;
-            _expeditionSummaryText.text =
-                $"ONLINE EXPEDITION REWARDS: Defeat all 3 {_currentSubject} monsters and the Stage 4 Boss to earn Subject XP. " +
-                $"Every subject starts at Level 1 and advances sequentially to Level 100 on the online server without level skipping.";
+            SubjectBattleCheckpoint cp = null;
+            bool hasCheckpoint = !isOffline && SubjectCheckpointManager.TryGetCheckpoint(_currentSubject, out cp) && cp != null;
+            _expeditionSummaryText.text = isOffline
+                ? "OFFLINE PRACTICE MODE: Answer cached subject questions and review explanations without internet. No XP or Coins are awarded offline."
+                : (hasCheckpoint
+                    ? $"SAVED CHECKPOINT FOUND AT STAGE {cp.stageIndex + 1}/4: Resume right where you exited, or restart fresh from Stage 1."
+                    : $"EXPEDITION REWARDS: Win each stage for +{SubjectTierSystem.StageWinCoinReward} Coins and Subject XP. Reviving after defeat costs {reviveCost} Coins in {SubjectTierSystem.GetBadgeName(tier)} Tier.");
+
+            if (_fightMonstersBtn != null && _fightMonstersBtnLabel != null)
+            {
+                var btnRt = (RectTransform)_fightMonstersBtn.transform;
+                if (hasCheckpoint)
+                {
+                    _fightMonstersBtnLabel.text = $"RESUME STAGE {cp.stageIndex + 1} OF 4";
+                    btnRt.anchoredPosition = new Vector2(-185f, 22f);
+                    btnRt.sizeDelta = new Vector2(490f, 80f);
+                    if (_restartStage1Btn != null) _restartStage1Btn.gameObject.SetActive(true);
+                }
+                else
+                {
+                    _fightMonstersBtnLabel.text = isOffline ? "START OFFLINE PRACTICE" : "BATTLE MONSTERS AND BOSS";
+                    btnRt.anchoredPosition = new Vector2(0f, 22f);
+                    btnRt.sizeDelta = new Vector2(860f, 80f);
+                    if (_restartStage1Btn != null) _restartStage1Btn.gameObject.SetActive(false);
+                }
+            }
 
             RefreshMonsterRosterSidebar(_currentSubject, lv, tier, tierColor);
         }
@@ -338,13 +367,28 @@ namespace KnowledgeWarrior.UI
 
             _fightMonstersBtn = CreateButton("FightMonstersBtn", monsterCard, Cyan,
                 new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0),
-                new Vector2(0, 22), new Vector2(860, 80), "BATTLE MONSTERS AND BOSS", 26, DarkText, out _);
+                new Vector2(0, 22), new Vector2(860, 80), "BATTLE MONSTERS AND BOSS", 25, DarkText, out _fightMonstersBtnLabel);
             _fightMonstersBtn.onClick.AddListener(() =>
             {
                 BattleAudioManager.Instance?.PlayButtonClick();
+                bool shouldResume = !OfflinePracticeManager.IsOfflinePracticeMode &&
+                                    SubjectCheckpointManager.TryGetCheckpoint(_currentSubject, out _);
                 Hide();
-                _onStartMonsterRun?.Invoke(_currentBiomeTitle, _currentSubject);
+                _onStartMonsterRun?.Invoke(_currentBiomeTitle, _currentSubject, shouldResume);
             });
+
+            _restartStage1Btn = CreateButton("RestartStage1Btn", monsterCard, new Color(0.14f, 0.19f, 0.38f, 1f),
+                new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0),
+                new Vector2(255f, 22f), new Vector2(350f, 80f), "RESTART STAGE 1", 21, Gold, out _);
+            _restartStage1Btn.onClick.AddListener(() =>
+            {
+                BattleAudioManager.Instance?.PlayButtonClick();
+                SubjectCheckpointManager.ClearCheckpoint(_currentSubject);
+                SyncManager.Instance?.SaveSubjectCheckpointOnline(_currentSubject, 0, 0, 0, false);
+                Hide();
+                _onStartMonsterRun?.Invoke(_currentBiomeTitle, _currentSubject, false);
+            });
+            _restartStage1Btn.gameObject.SetActive(false);
 
             ModalFx.Dress(_modalGroup, UIPalette.Cyan);
             ModalFx.DecorateByName((RectTransform)_modalGroup.transform, UIPalette.Cyan, true, "MonsterRosterPanelBorder", "MonsterModeBorder");

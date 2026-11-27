@@ -31,17 +31,24 @@ namespace KnowledgeWarrior.UI
         private TMP_Text _errorDetailText;
         private Button _retryButton;
         private TMP_Text _retryButtonLabel;
+        private Button _offlinePracticeButton;
+        private TMP_Text _offlinePracticeButtonLabel;
         private TMP_InputField _serverUrlInput;
         private Action _onRetryRequested;
+        private Action _onOfflinePracticeRequested;
 
         public bool IsVisible => _modalGroup != null && _modalGroup.interactable;
 
-        public static NetworkGateModal EnsureOnCanvas(Canvas canvas, Action onRetryRequested)
+        public static NetworkGateModal EnsureOnCanvas(
+            Canvas canvas,
+            Action onRetryRequested,
+            Action onOfflinePracticeRequested = null)
         {
             var existing = canvas.GetComponentInChildren<NetworkGateModal>(true);
             if (existing != null)
             {
                 existing._onRetryRequested = onRetryRequested;
+                if (onOfflinePracticeRequested != null) existing._onOfflinePracticeRequested = onOfflinePracticeRequested;
                 return existing;
             }
 
@@ -50,6 +57,7 @@ namespace KnowledgeWarrior.UI
             go.transform.SetParent(canvas.transform, false);
             var modal = go.AddComponent<NetworkGateModal>();
             modal._onRetryRequested = onRetryRequested;
+            modal._onOfflinePracticeRequested = onOfflinePracticeRequested;
             modal.BuildRuntimeUI();
             return modal;
         }
@@ -96,8 +104,8 @@ namespace KnowledgeWarrior.UI
             _titleText.text = "INTERNET CONNECTION REQUIRED";
             _titleText.color = Red;
             _bodyText.text =
-                "Knowledge Warrior is a completely online game and does not operate without active internet data.\n" +
-                "Live curriculum questions, warrior authentication, and sequential subject progression require a server connection.";
+                "Live server sync, XP, coins, and leaderboard progress require active internet data.\n" +
+                "You can retry connecting or enter Limited-Access Offline Practice Mode to study questions without earning XP or coins.";
             _errorDetailText.text = string.IsNullOrWhiteSpace(errorReason)
                 ? "Please enable Wi-Fi or mobile data and verify that the game server is reachable."
                 : errorReason;
@@ -105,6 +113,11 @@ namespace KnowledgeWarrior.UI
 
             if (_retryButton != null) _retryButton.interactable = true;
             if (_retryButtonLabel != null) _retryButtonLabel.text = "RETRY CONNECTION";
+            if (_offlinePracticeButton != null)
+            {
+                _offlinePracticeButton.gameObject.SetActive(_onOfflinePracticeRequested != null);
+                _offlinePracticeButton.interactable = true;
+            }
         }
 
         public void SetConnectingState(string statusMessage)
@@ -122,6 +135,7 @@ namespace KnowledgeWarrior.UI
 
             if (_retryButton != null) _retryButton.interactable = false;
             if (_retryButtonLabel != null) _retryButtonLabel.text = "CONNECTING";
+            if (_offlinePracticeButton != null) _offlinePracticeButton.gameObject.SetActive(false);
         }
 
         public void Hide()
@@ -151,12 +165,12 @@ namespace KnowledgeWarrior.UI
             _modalGroup = backdrop.gameObject.AddComponent<CanvasGroup>();
 
             var cardBorder = CreateImage("GateCardBorder", backdrop.rectTransform, BorderColor);
-            Place(cardBorder.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 90), new Vector2(960, 620));
+            Place(cardBorder.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 70), new Vector2(960, 710));
 
             var card = CreateImage("GateCardFill", cardBorder.rectTransform, PanelColor).rectTransform;
             Stretch(card, 2, 2, 2, 2);
 
-            CreateText("OnlineOnlyTag", card, "ONLINE-ONLY GAME MODE", 20, Cyan, TextAlignmentOptions.Center, true,
+            CreateText("OnlineOnlyTag", card, "CONNECTION STATUS", 20, Cyan, TextAlignmentOptions.Center, true,
                 r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -34), new Vector2(860, 30)));
 
             _titleText = CreateText("GateTitle", card, "INTERNET CONNECTION REQUIRED", 38, Red, TextAlignmentOptions.Center, true,
@@ -171,8 +185,17 @@ namespace KnowledgeWarrior.UI
 
             _retryButton = CreateButton("RetryConnectionBtn", card, Cyan,
                 new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0),
-                new Vector2(0, 44), new Vector2(500, 76), "RETRY CONNECTION", 26, DarkText, out _retryButtonLabel);
+                new Vector2(0, 128), new Vector2(620, 72), "RETRY CONNECTION", 25, DarkText, out _retryButtonLabel);
             _retryButton.onClick.AddListener(OnRetryClicked);
+
+            _offlinePracticeButton = CreateButton("OfflinePracticeBtn", card, new Color(0.14f, 0.19f, 0.38f, 1f),
+                new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0),
+                new Vector2(0, 36), new Vector2(620, 72), "OFFLINE PRACTICE MODE", 23, Gold, out _offlinePracticeButtonLabel);
+            _offlinePracticeButton.onClick.AddListener(() =>
+            {
+                BattleAudioManager.Instance?.PlayButtonClick();
+                _onOfflinePracticeRequested?.Invoke();
+            });
 
             if (SyncManager.IsLocalDevelopmentEnvironment)
             {
