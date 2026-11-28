@@ -2,6 +2,7 @@ const MIN_SUBJECT_LEVEL = 1;
 const MAX_SUBJECT_LEVEL = 100;
 const MAX_BATTLE_XP_AWARD = 350;
 const STAGE_WIN_COIN_REWARD = 15;
+const BOSS_WIN_COIN_REWARD = 25;
 const INACTIVITY_TIMEOUT_SECONDS = 3600;
 
 const DEFAULT_SUBJECTS = [
@@ -109,16 +110,23 @@ function buildDefaultSubjectRow(subject) {
   };
 }
 
+function getStageWinCoinReward(stageIndex, isBoss = false) {
+  const numericStage = parseInt(stageIndex, 10) || 0;
+  return Boolean(isBoss) || numericStage >= 3 ? BOSS_WIN_COIN_REWARD : STAGE_WIN_COIN_REWARD;
+}
+
 module.exports = {
   MIN_SUBJECT_LEVEL,
   MAX_SUBJECT_LEVEL,
   MAX_BATTLE_XP_AWARD,
   STAGE_WIN_COIN_REWARD,
+  BOSS_WIN_COIN_REWARD,
   INACTIVITY_TIMEOUT_SECONDS,
   DEFAULT_SUBJECTS,
   xpToNextSubjectLevel,
   getBadgeTierForLevel,
   getReviveCoinCostForLevel,
+  getStageWinCoinReward,
   calculateGlobalLevel,
   applySequentialSubjectXp,
   buildDefaultSubjectRow,

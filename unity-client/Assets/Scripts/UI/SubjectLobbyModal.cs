@@ -149,11 +149,12 @@ namespace KnowledgeWarrior.UI
 
             _questionAlignmentText.text =
                 $"Aligned Pool: <color=#FFD24D>{SubjectTierSystem.GetBadgeName(tier)} Tier (Difficulty {(int)tier})</color> " +
-                $"for {_currentSubject}  •  Stage Win: +{SubjectTierSystem.StageWinCoinReward} Coins  •  Revive Cost: {reviveCost} Coins";
+                $"for {_currentSubject}  •  Monster Win: +{SubjectTierSystem.StageWinCoinReward} Coins  •  Boss Win: +{SubjectTierSystem.BossWinCoinReward} Coins  •  Revive: {reviveCost} Coins";
 
             if (lv >= SubjectTierSystem.MaxLevel)
             {
-                _levelProgressLabelText.text = "EXPERT LEVEL 100 MASTERED! Clearing stages still awards +15 Coins, Subject Points, and Leaderboard XP.";
+                _levelProgressLabelText.text =
+                    $"EXPERT LEVEL 100 MASTERED! Clearing stages still awards +{SubjectTierSystem.StageWinCoinReward} Coins (+{SubjectTierSystem.BossWinCoinReward} on Boss), Points, and Leaderboard XP.";
                 SetFill(_levelProgressFill, 1f);
             }
             else
@@ -177,7 +178,7 @@ namespace KnowledgeWarrior.UI
                     : "OFFLINE PRACTICE MODE: Answer cached subject questions and review explanations without internet. Stage checkpoints save locally and stay separate from Online Mode.")
                 : (hasCheckpoint
                     ? $"SAVED CHECKPOINT FOUND AT STAGE {cp.stageIndex + 1}/4: Resume right where you exited, or restart fresh from Stage 1."
-                    : $"EXPEDITION REWARDS: Win each stage for +{SubjectTierSystem.StageWinCoinReward} Coins and Subject XP. Reviving after defeat costs {reviveCost} Coins in {SubjectTierSystem.GetBadgeName(tier)} Tier.");
+                    : $"EXPEDITION REWARDS: Win Monster stages for +{SubjectTierSystem.StageWinCoinReward} Coins and Boss stage for +{SubjectTierSystem.BossWinCoinReward} Coins. Revive costs {reviveCost} Coins in {SubjectTierSystem.GetBadgeName(tier)} Tier.");
 
             if (_fightMonstersBtn != null && _fightMonstersBtnLabel != null)
             {
@@ -228,8 +229,9 @@ namespace KnowledgeWarrior.UI
                     : $"STAGE {i + 1} • SUBJECT MONSTER";
                 row.stageTagText.color = rowAccent;
                 row.nameText.text = stage.displayName;
+                int winCoins = SubjectTierSystem.GetStageWinCoinReward(isBoss);
                 row.statsText.text =
-                    $"HP: {stage.maxHp}   •   ATK: {stage.attack}   •   Victory Bonus: +{stage.xpReward} XP";
+                    $"HP: {stage.maxHp}   •   ATK: {stage.attack}   •   Win: +{stage.xpReward} XP, +{winCoins} Coins";
             }
         }
 

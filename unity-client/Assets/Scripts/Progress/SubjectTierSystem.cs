@@ -30,6 +30,10 @@ namespace KnowledgeWarrior.Progress
         public const int MinLevel = 1;
         public const int MaxLevel = 100;
         public const int StageWinCoinReward = 15;
+        public const int BossWinCoinReward = 25;
+
+        public static int GetStageWinCoinReward(bool isBoss) =>
+            isBoss ? BossWinCoinReward : StageWinCoinReward;
 
         private static readonly Color BeginnerColor = new(0.24f, 0.90f, 0.63f, 1f);
         private static readonly Color IntermediateColor = new(0.30f, 0.88f, 1f, 1f);

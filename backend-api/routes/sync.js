@@ -6,9 +6,11 @@ const {
   DEFAULT_SUBJECTS,
   MAX_BATTLE_XP_AWARD,
   STAGE_WIN_COIN_REWARD,
+  BOSS_WIN_COIN_REWARD,
   xpToNextSubjectLevel,
   getBadgeTierForLevel,
   getReviveCoinCostForLevel,
+  getStageWinCoinReward,
   calculateGlobalLevel,
   applySequentialSubjectXp,
   buildDefaultSubjectRow,
@@ -164,11 +166,12 @@ router.post('/battle', authenticateToken, async (req, res, next) => {
     const subject = String(req.body.subject || 'Programming').trim() || 'Programming';
     const victory = Boolean(req.body.victory);
     const stageIndex = Math.max(0, Math.min(3, parseInt(req.body.stageIndex, 10) || 0));
+    const isBoss = Boolean(req.body.isBoss) || stageIndex >= 3;
     const clearCheckpoint = Boolean(req.body.clearCheckpoint);
     const totalAnswers = Math.max(0, Math.min(50, parseInt(req.body.totalAnswers, 10) || 0));
     const correctAnswers = Math.max(0, Math.min(totalAnswers, parseInt(req.body.correctAnswers, 10) || 0));
     const xpGained = Math.max(0, Math.min(MAX_BATTLE_XP_AWARD, parseInt(req.body.xpGained, 10) || 0));
-    const coinsEarned = victory ? STAGE_WIN_COIN_REWARD : 0;
+    const coinsEarned = victory ? getStageWinCoinReward(stageIndex, isBoss) : 0;
     const answerLogs = Array.isArray(req.body.answerLogs) ? req.body.answerLogs : [];
 
     await client.query('BEGIN');

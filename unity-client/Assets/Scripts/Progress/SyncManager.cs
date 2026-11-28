@@ -24,6 +24,7 @@ namespace KnowledgeWarrior.Progress
         public string subject;
         public int xpGained;
         public bool victory;
+        public bool isBoss;
         public int stageIndex;
         public bool clearCheckpoint;
         public int correctAnswers;

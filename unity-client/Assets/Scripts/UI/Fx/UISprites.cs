@@ -20,6 +20,7 @@ namespace KnowledgeWarrior.UI
         private static Sprite _sweatDrop;
         private static Sprite _angerMark;
         private static Sprite _exclaimBurst;
+        private static Sprite _brandLogo;
 
         /// <summary>Opaque at the top, transparent at the bottom.</summary>
         public static Sprite VerticalGradient => Get(ref _verticalGradient, BuildVerticalGradient);
@@ -53,6 +54,9 @@ namespace KnowledgeWarrior.UI
 
         /// <summary>Exclamation burst icon for shock and boss roar emotes.</summary>
         public static Sprite ExclaimBurst => Get(ref _exclaimBurst, BuildExclaimBurst);
+
+        /// <summary>Official Knowledge Warrior brand emblem loaded from Resources/UI.</summary>
+        public static Sprite BrandLogo => Get(ref _brandLogo, LoadOrBuildBrandLogo);
 
         /// <summary>Returns the procedural sprite matching a combat emote type.</summary>
         public static Sprite GetEmoteIcon(CombatEmoteType emote) => emote switch
@@ -257,6 +261,24 @@ namespace KnowledgeWarrior.UI
                 bool dot = dx * dx + (dy + 15f) * (dy + 15f) <= 28f;
                 return (stem || dot) ? 1f : 0f;
             });
+
+        private static Sprite LoadOrBuildBrandLogo()
+        {
+            var tex = Resources.Load<Texture2D>("UI/BrandLogo_KnowledgeWarrior");
+            if (tex != null)
+            {
+                var sprite = Sprite.Create(
+                    tex,
+                    new Rect(0f, 0f, tex.width, tex.height),
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+                sprite.name = "BrandLogo_KnowledgeWarrior";
+                return sprite;
+            }
+
+            var loaded = Resources.Load<Sprite>("UI/BrandLogo_KnowledgeWarrior");
+            return loaded != null ? loaded : ShieldEmblem;
+        }
 
         private static Sprite Build(string name, int width, int height, Func<int, int, float> alpha, Vector4 border = default)
         {
