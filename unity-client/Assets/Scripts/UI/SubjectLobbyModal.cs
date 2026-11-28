@@ -170,9 +170,11 @@ namespace KnowledgeWarrior.UI
 
             _monsterModeCardBorder.color = tierColor;
             SubjectBattleCheckpoint cp = null;
-            bool hasCheckpoint = !isOffline && SubjectCheckpointManager.TryGetCheckpoint(_currentSubject, out cp) && cp != null;
+            bool hasCheckpoint = SubjectCheckpointManager.TryGetCheckpoint(_currentSubject, out cp) && cp != null;
             _expeditionSummaryText.text = isOffline
-                ? "OFFLINE PRACTICE MODE: Answer cached subject questions and review explanations without internet. No XP or Coins are awarded offline."
+                ? (hasCheckpoint
+                    ? $"SAVED OFFLINE CHECKPOINT AT STAGE {cp.stageIndex + 1}/4 (SEPARATE FROM ONLINE): Resume right where you left off in Offline Practice, or restart from Stage 1."
+                    : "OFFLINE PRACTICE MODE: Answer cached subject questions and review explanations without internet. Stage checkpoints save locally and stay separate from Online Mode.")
                 : (hasCheckpoint
                     ? $"SAVED CHECKPOINT FOUND AT STAGE {cp.stageIndex + 1}/4: Resume right where you exited, or restart fresh from Stage 1."
                     : $"EXPEDITION REWARDS: Win each stage for +{SubjectTierSystem.StageWinCoinReward} Coins and Subject XP. Reviving after defeat costs {reviveCost} Coins in {SubjectTierSystem.GetBadgeName(tier)} Tier.");
@@ -371,8 +373,7 @@ namespace KnowledgeWarrior.UI
             _fightMonstersBtn.onClick.AddListener(() =>
             {
                 BattleAudioManager.Instance?.PlayButtonClick();
-                bool shouldResume = !OfflinePracticeManager.IsOfflinePracticeMode &&
-                                    SubjectCheckpointManager.TryGetCheckpoint(_currentSubject, out _);
+                bool shouldResume = SubjectCheckpointManager.TryGetCheckpoint(_currentSubject, out _);
                 Hide();
                 _onStartMonsterRun?.Invoke(_currentBiomeTitle, _currentSubject, shouldResume);
             });
@@ -384,7 +385,10 @@ namespace KnowledgeWarrior.UI
             {
                 BattleAudioManager.Instance?.PlayButtonClick();
                 SubjectCheckpointManager.ClearCheckpoint(_currentSubject);
-                SyncManager.Instance?.SaveSubjectCheckpointOnline(_currentSubject, 0, 0, 0, false);
+                if (!OfflinePracticeManager.IsOfflinePracticeMode)
+                {
+                    SyncManager.Instance?.SaveSubjectCheckpointOnline(_currentSubject, 0, 0, 0, false);
+                }
                 Hide();
                 _onStartMonsterRun?.Invoke(_currentBiomeTitle, _currentSubject, false);
             });

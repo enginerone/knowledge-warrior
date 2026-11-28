@@ -361,12 +361,41 @@ namespace KnowledgeWarrior.EditorTools
 
             var (xpFill, _, _) = Bar("XP", panel, 16, 176, -98, 14, Violet, withGhost: false, withLabel: false);
             refs["playerXpFill"] = xpFill;
-            var xpTxt = Text("XPText", panel, "0 / 80 XP", 17, TextSoft, TextAlignmentOptions.MidlineRight, false,
+            var xpTxt = Text("XPText", panel, "0 PTS  •  0/80 XP", 17, TextSoft, TextAlignmentOptions.MidlineRight, false,
                 TopRight(new Vector2(-16, -90), new Vector2(154, 28)));
             xpTxt.enableAutoSizing = true;
             xpTxt.fontSizeMin = 13;
             xpTxt.fontSizeMax = 17;
             refs["playerXpText"] = xpTxt;
+
+            var coinBorder = Image("CoinHUD", parent, new Color(1f, 0.82f, 0.30f, 0.48f), _rounded);
+            coinBorder.pixelsPerUnitMultiplier = 1.8f;
+            coinBorder.raycastTarget = false;
+            Place(coinBorder.rectTransform, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(20, -232), new Vector2(210, 46));
+
+            var coinFill = Image("Fill", coinBorder.rectTransform, new Color(0.04f, 0.06f, 0.16f, 0.90f), _rounded);
+            coinFill.pixelsPerUnitMultiplier = 1.8f;
+            coinFill.raycastTarget = false;
+            Stretch(coinFill.rectTransform, 2, 2, 2, 2);
+
+            var coinIconRt = Rect("CoinIcon", coinFill.rectTransform);
+            Place(coinIconRt, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(12, 0), new Vector2(28, 28));
+            var coinIcon = coinIconRt.gameObject.AddComponent<Image>();
+            coinIcon.sprite = UISprites.Coin;
+            coinIcon.color = Color.white;
+            coinIcon.preserveAspect = true;
+            coinIcon.raycastTarget = false;
+
+            var coinTxt = Text("CoinText", coinFill.rectTransform, "0 COINS", 19, Gold, TextAlignmentOptions.MidlineLeft, true, r =>
+            {
+                Stretch(r);
+                r.offsetMin = new Vector2(48, 4);
+                r.offsetMax = new Vector2(-12, -4);
+            });
+            coinTxt.enableAutoSizing = true;
+            coinTxt.fontSizeMin = 14;
+            coinTxt.fontSizeMax = 20;
+            refs["playerCoinText"] = coinTxt;
         }
 
         private static void BuildEnemyHud(RectTransform parent, Dictionary<string, Object> refs)

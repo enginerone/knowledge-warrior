@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using KnowledgeWarrior.UI;
 using UnityEngine;
 
 namespace KnowledgeWarrior.Combat
@@ -39,6 +40,10 @@ namespace KnowledgeWarrior.Combat
         private float _bobTime;
         private bool _idle = true;
         private LineRenderer _gestureFxLine;
+        private Coroutine _emoteRoutine;
+        private Vector2 _emoteOffset;
+        private Vector3 _emoteScale = Vector3.one;
+        private float _emoteAngle;
 
         public SpriteRenderer Renderer => spriteRenderer;
 
@@ -46,6 +51,16 @@ namespace KnowledgeWarrior.Combat
         public Vector3 PopupAnchor => spriteRenderer != null
             ? new Vector3(spriteRenderer.bounds.center.x, spriteRenderer.bounds.max.y, 0f)
             : transform.position + Vector3.up * 2f;
+
+        /// <summary>World position above and slightly outward from the fighter for emote speech bubbles.</summary>
+        public Vector3 EmoteAnchor
+        {
+            get
+            {
+                float outward = transform.position.x < 0f ? -0.45f : 0.45f;
+                return PopupAnchor + new Vector3(outward, 0.28f, 0f);
+            }
+        }
 
         private void Awake()
         {
@@ -99,6 +114,10 @@ namespace KnowledgeWarrior.Combat
             _visual.gameObject.SetActive(true);
             if (_gestureFxLine != null) _gestureFxLine.enabled = false;
             _shakeOffset = 0f;
+            _emoteOffset = Vector2.zero;
+            _emoteScale = Vector3.one;
+            _emoteAngle = 0f;
+            _emoteRoutine = null;
             _idle = true;
             OnHealthChanged?.Invoke(CurrentHp, MaxHp);
         }
@@ -164,6 +183,68 @@ namespace KnowledgeWarrior.Combat
             StartCoroutine(FlashRoutine(blockFlashColor, 0.35f));
             StartCoroutine(PunchScaleRoutine(1.12f, 0.26f));
             StartCoroutine(PlayShieldBarrierEffectRoutine());
+        }
+
+        /// <summary>Triggers a subtle non-blocking posture micro-animation matching the displayed emote.</summary>
+        public void PlayEmote(CombatEmoteType emote)
+        {
+            if (!gameObject.activeInHierarchy || _visual == null || !_visual.gameObject.activeInHierarchy) return;
+            if (_emoteRoutine != null) StopCoroutine(_emoteRoutine);
+            _emoteRoutine = StartCoroutine(EmotePoseRoutine(emote));
+        }
+
+        private IEnumerator EmotePoseRoutine(CombatEmoteType emote)
+        {
+            float dirToCenter = transform.position.x < 0f ? 1f : -1f;
+            float duration = emote switch
+            {
+                CombatEmoteType.Triumph or CombatEmoteType.CritFury => 0.44f,
+                CombatEmoteType.ShieldBlock => 0.32f,
+                CombatEmoteType.MonsterTaunt or CombatEmoteType.BossRoar => 0.38f,
+                _ => 0.36f
+            };
+
+            float t = 0f;
+            while (t < duration)
+            {
+                t += Time.deltaTime;
+                float k = Mathf.Clamp01(t / duration);
+                float pulse = Mathf.Sin(k * Mathf.PI);
+
+                if (emote == CombatEmoteType.Triumph || emote == CombatEmoteType.CritFury)
+                {
+                    float hop = Mathf.Abs(Mathf.Sin(k * Mathf.PI * 2f));
+                    _emoteOffset = new Vector2(0f, hop * 0.22f);
+                    _emoteScale = new Vector3(1f - 0.06f * hop, 1f + 0.10f * hop, 1f);
+                    _emoteAngle = 0f;
+                }
+                else if (emote == CombatEmoteType.ShieldBlock)
+                {
+                    _emoteOffset = Vector2.zero;
+                    _emoteScale = new Vector3(1f + 0.14f * pulse, 1f - 0.05f * pulse, 1f);
+                    _emoteAngle = dirToCenter * -4f * pulse;
+                }
+                else if (emote == CombatEmoteType.MonsterTaunt || emote == CombatEmoteType.BossRoar)
+                {
+                    _emoteOffset = new Vector2(dirToCenter * 0.08f * pulse, 0.06f * pulse);
+                    _emoteScale = Vector3.one * Mathf.Lerp(1f, 1.14f, pulse);
+                    _emoteAngle = dirToCenter * -6f * pulse;
+                }
+                else
+                {
+                    float shiver = Mathf.Sin(k * Mathf.PI * 6f) * 0.09f * (1f - k);
+                    _emoteOffset = new Vector2(shiver, -0.06f * pulse);
+                    _emoteScale = new Vector3(1f + 0.05f * pulse, 1f - 0.08f * pulse, 1f);
+                    _emoteAngle = dirToCenter * 5f * pulse;
+                }
+
+                yield return null;
+            }
+
+            _emoteOffset = Vector2.zero;
+            _emoteScale = Vector3.one;
+            _emoteAngle = 0f;
+            _emoteRoutine = null;
         }
 
         /// <summary>
@@ -294,11 +375,15 @@ namespace KnowledgeWarrior.Combat
                 bob = Mathf.Sin(_bobTime) * idleBobAmplitude;
                 swayAngle = Mathf.Cos(_bobTime * 0.8f) * 2.2f;
                 float breathe = 1f + Mathf.Sin(_bobTime) * 0.025f;
-                _visual.localScale = new Vector3(_visualBaseScale.x * breathe, _visualBaseScale.y / breathe, 1f);
-                _visual.localRotation = Quaternion.Euler(0f, 0f, swayAngle);
+                _visual.localScale = new Vector3(
+                    _visualBaseScale.x * breathe * _emoteScale.x,
+                    (_visualBaseScale.y / breathe) * _emoteScale.y,
+                    1f);
+                _visual.localRotation = Quaternion.Euler(0f, 0f, swayAngle + _emoteAngle);
             }
             var lp = _visual.localPosition;
-            _visual.localPosition = new Vector3(_shakeOffset, Mathf.Lerp(lp.y, bob, 0.5f), lp.z);
+            float targetY = (_idle ? bob : 0f) + _emoteOffset.y;
+            _visual.localPosition = new Vector3(_shakeOffset + _emoteOffset.x, Mathf.Lerp(lp.y, targetY, 0.5f), lp.z);
         }
 
         private void EnsureGestureFxRenderer()

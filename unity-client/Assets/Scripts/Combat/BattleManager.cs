@@ -166,6 +166,65 @@ namespace KnowledgeWarrior.Combat
             }
         }
 
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (pauseStatus)
+            {
+                SaveActiveBattleCheckpointIfInProgress();
+            }
+        }
+
+        private void OnApplicationQuit()
+        {
+            SaveActiveBattleCheckpointIfInProgress();
+        }
+
+        private void SaveActiveBattleCheckpointIfInProgress()
+        {
+            bool battleInProgress = State == BattleState.AwaitingAnswer ||
+                                    State == BattleState.AwaitingContinue ||
+                                    State == BattleState.Intro;
+            if (!battleInProgress || _isPausePromptActive || player == null || enemy == null || player.IsDead || enemy.IsDead)
+            {
+                return;
+            }
+            SaveActiveBattleCheckpoint();
+        }
+
+        private void SaveActiveBattleCheckpoint()
+        {
+            if (player == null || enemy == null || player.IsDead || enemy.IsDead) return;
+            int subjLv = ProgressManager.GetSubjectLevel(_selectedSubject);
+            var checkpoint = new SubjectBattleCheckpoint
+            {
+                subject = _selectedSubject,
+                biomeTitle = biomeName,
+                subjectLevel = subjLv,
+                stageIndex = _stageIndex,
+                playerHp = player.CurrentHp,
+                playerMaxHp = player.MaxHp,
+                enemyHp = enemy.CurrentHp,
+                enemyMaxHp = enemy.MaxHp,
+                turnType = (int)_turn,
+                streak = _streak,
+                battleCorrect = _battleCorrect,
+                battleTotal = _battleTotal,
+                battleXp = _battleXp,
+                currentQuestionId = _currentQuestion?.id,
+                hasCheckpoint = true
+            };
+            SubjectCheckpointManager.SaveCheckpoint(checkpoint);
+            if (!OfflinePracticeManager.IsOfflinePracticeMode)
+            {
+                syncManager?.SaveSubjectCheckpointOnline(
+                    _selectedSubject,
+                    _stageIndex,
+                    player.CurrentHp,
+                    enemy.CurrentHp,
+                    true);
+            }
+        }
+
         private void HandleOnlineAvailabilityChanged(bool online, string reason)
         {
             if (online || OfflinePracticeManager.IsOfflinePracticeMode || _networkGateModal == null) return;
@@ -317,6 +376,7 @@ namespace KnowledgeWarrior.Combat
             }
 
             if (_networkGateModal != null) _networkGateModal.Hide();
+            if (_authGateModal != null) _authGateModal.Hide();
 
             if (_uncommittedBattleResult != null)
             {
@@ -360,6 +420,7 @@ namespace KnowledgeWarrior.Combat
                 }
             }
 
+            if (_authGateModal != null) _authGateModal.Hide();
             _sessionBootstrapped = true;
             StartSubjectMonsterExpedition(biomeName, _selectedSubject, resumeCheckpoint: false);
             if (showBiomeSelectOnStart && _biomeModal != null)
@@ -421,7 +482,7 @@ namespace KnowledgeWarrior.Combat
             State = BattleState.Idle;
 
             string modeNotice = OfflinePracticeManager.IsOfflinePracticeMode
-                ? "You are practicing offline."
+                ? "Offline Practice Mode: Choose RESUME BATTLE to continue, or QUIT TO SUBJECT LOBBIES to save your offline stage progress (kept separate from Online Mode) so you can return anytime."
                 : "Choose RESUME BATTLE to continue, or QUIT TO SUBJECT LOBBIES to save your stage progress so you can switch subjects and return later.";
 
             ui.ShowResult(
@@ -453,34 +514,9 @@ namespace KnowledgeWarrior.Combat
             _isPausePromptActive = false;
             StopAllCoroutines();
 
-            if (!OfflinePracticeManager.IsOfflinePracticeMode && !player.IsDead && !enemy.IsDead)
+            if (!player.IsDead && !enemy.IsDead)
             {
-                int subjLv = ProgressManager.GetSubjectLevel(_selectedSubject);
-                var checkpoint = new SubjectBattleCheckpoint
-                {
-                    subject = _selectedSubject,
-                    biomeTitle = biomeName,
-                    subjectLevel = subjLv,
-                    stageIndex = _stageIndex,
-                    playerHp = player.CurrentHp,
-                    playerMaxHp = player.MaxHp,
-                    enemyHp = enemy.CurrentHp,
-                    enemyMaxHp = enemy.MaxHp,
-                    turnType = (int)_turn,
-                    streak = _streak,
-                    battleCorrect = _battleCorrect,
-                    battleTotal = _battleTotal,
-                    battleXp = _battleXp,
-                    currentQuestionId = _currentQuestion?.id,
-                    hasCheckpoint = true
-                };
-                SubjectCheckpointManager.SaveCheckpoint(checkpoint);
-                syncManager?.SaveSubjectCheckpointOnline(
-                    _selectedSubject,
-                    _stageIndex,
-                    player.CurrentHp,
-                    enemy.CurrentHp,
-                    true);
+                SaveActiveBattleCheckpoint();
             }
 
             State = BattleState.Idle;
@@ -503,8 +539,7 @@ namespace KnowledgeWarrior.Combat
             }
             else
             {
-                bool shouldResume = !OfflinePracticeManager.IsOfflinePracticeMode &&
-                                    SubjectCheckpointManager.TryGetCheckpoint(_selectedSubject, out _);
+                bool shouldResume = SubjectCheckpointManager.TryGetCheckpoint(_selectedSubject, out _);
                 StartSubjectMonsterExpedition(biomeName, _selectedSubject, shouldResume);
             }
         }
@@ -530,7 +565,6 @@ namespace KnowledgeWarrior.Combat
             ReviveAndSetupPlayer();
 
             if (resumeCheckpoint &&
-                !OfflinePracticeManager.IsOfflinePracticeMode &&
                 SubjectCheckpointManager.TryGetCheckpoint(_selectedSubject, out var cp) &&
                 cp != null)
             {
@@ -538,9 +572,9 @@ namespace KnowledgeWarrior.Combat
                 return;
             }
 
+            SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
             if (!OfflinePracticeManager.IsOfflinePracticeMode)
             {
-                SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
                 syncManager?.SaveSubjectCheckpointOnline(_selectedSubject, 0, 0, 0, false);
             }
             StartStage(0);
@@ -669,6 +703,8 @@ namespace KnowledgeWarrior.Combat
         {
             State = BattleState.Intro;
             ui.HideQuestionPanel();
+            ui.SpawnEmote(player, CombatEmoteType.Triumph, "READY!");
+            ui.SpawnEmote(enemy, def.isBoss ? CombatEmoteType.BossRoar : CombatEmoteType.MonsterTaunt, def.isBoss ? "ROAR!" : "GRRR!");
             if (def.isBoss)
             {
                 BattleAudioManager.Instance?.PlayBossEntranceRoar();
@@ -741,6 +777,7 @@ namespace KnowledgeWarrior.Combat
             ui.SetTurn(_turn);
             ui.ShowQuestion(_currentQuestion);
             State = BattleState.AwaitingAnswer;
+            SaveActiveBattleCheckpoint();
         }
 
         private IEnumerator ReplenishAndRetryTurnRoutine(string effectiveSubject, int subjectLevel)
@@ -847,6 +884,8 @@ namespace KnowledgeWarrior.Combat
                         cameraShake?.Shake(isCrit ? 0.25f : 0.15f, isCrit ? 0.18f : 0.1f);
                         ui.SpawnPopup(enemy.PopupAnchor, damage.ToString(), isCrit ? critColor : damageColor, isCrit ? 1.4f : 1.1f);
                         if (combo > 0) ui.SpawnPopup(enemy.PopupAnchor + Vector3.up * 0.7f, $"COMBO x{_streak}", critColor, 0.8f);
+                        ui.SpawnEmote(player, isCrit ? CombatEmoteType.CritFury : CombatEmoteType.Triumph, isCrit ? "CRITICAL!" : "STRIKE!");
+                        if (!enemy.IsDead) ui.SpawnEmote(enemy, CombatEmoteType.MonsterShock, "ARGH!");
                     });
                     headline = isCrit ? $"Correct! Combo x{_streak}!" : "Correct! Direct hit!";
                 }
@@ -854,7 +893,11 @@ namespace KnowledgeWarrior.Combat
                 {
                     BattleAudioManager.Instance?.PlayMissWhoosh();
                     yield return player.AttackRoutine(enemy, () =>
-                        ui.SpawnPopup(enemy.PopupAnchor, "MISS", missColor, 1f));
+                    {
+                        ui.SpawnPopup(enemy.PopupAnchor, "MISS", missColor, 1f);
+                        ui.SpawnEmote(player, CombatEmoteType.SweatMiss, "OOPS!");
+                        ui.SpawnEmote(enemy, CombatEmoteType.MonsterTaunt, "HAHA!");
+                    });
                     headline = "Wrong! Your attack missed.";
                 }
             }
@@ -870,6 +913,8 @@ namespace KnowledgeWarrior.Combat
                         BattleAudioManager.Instance?.PlayHeroBlock();
                         player.PlayBlock();
                         ui.SpawnPopup(player.PopupAnchor, "BLOCKED", blockColor, 1.1f);
+                        ui.SpawnEmote(player, CombatEmoteType.ShieldBlock, "GUARD!");
+                        ui.SpawnEmote(enemy, CombatEmoteType.MonsterShock, "BLOCKED!");
                     }
                     else
                     {
@@ -877,13 +922,25 @@ namespace KnowledgeWarrior.Combat
                         player.TakeDamage(damage);
                         cameraShake?.Shake(0.2f, 0.14f);
                         ui.SpawnPopup(player.PopupAnchor, damage.ToString(), damageColor, 1.2f);
+                        ui.SpawnEmote(enemy, def.isBoss ? CombatEmoteType.BossRoar : CombatEmoteType.MonsterTaunt, def.isBoss ? "BURN!" : "TAKE THIS!");
+                        if (!player.IsDead) ui.SpawnEmote(player, CombatEmoteType.SweatMiss, "OUCH!");
                     }
                 });
                 headline = correct ? "Correct! Attack blocked!" : "Wrong! You took a hit.";
             }
 
-            if (enemy.IsDead) yield return enemy.DeathRoutine();
-            if (player.IsDead) yield return player.DeathRoutine();
+            if (enemy.IsDead)
+            {
+                ui.SpawnEmote(player, CombatEmoteType.Triumph, "VICTORY!");
+                ui.SpawnEmote(enemy, CombatEmoteType.DefeatDizzy, "KO!");
+                yield return enemy.DeathRoutine();
+            }
+            if (player.IsDead)
+            {
+                ui.SpawnEmote(enemy, CombatEmoteType.MonsterTaunt, "VICTORY!");
+                ui.SpawnEmote(player, CombatEmoteType.DefeatDizzy, "KO!");
+                yield return player.DeathRoutine();
+            }
 
             ui.ShowFeedback(correct, headline, q.explanation);
             State = BattleState.AwaitingContinue;
@@ -946,6 +1003,26 @@ namespace KnowledgeWarrior.Combat
                 bool lastStage = _stageIndex >= _activeRunStages.Count - 1;
                 _runFinished = lastStage;
                 _lastDefeatRequiresRestart = false;
+
+                if (lastStage)
+                {
+                    SubjectCheckpointManager.ClearCheckpoint(_selectedSubject, isOfflineOverride: true);
+                }
+                else
+                {
+                    int nextStageHp = Mathf.Min(player.MaxHp, player.CurrentHp + Mathf.RoundToInt(player.MaxHp * healBetweenStages));
+                    SubjectCheckpointManager.SaveCheckpoint(new SubjectBattleCheckpoint
+                    {
+                        subject = _selectedSubject,
+                        biomeTitle = biomeName,
+                        subjectLevel = ProgressManager.GetSubjectLevel(_selectedSubject),
+                        stageIndex = _stageIndex + 1,
+                        playerHp = nextStageHp,
+                        playerMaxHp = player.MaxHp,
+                        hasCheckpoint = true
+                    }, isOfflineOverride: true);
+                }
+
                 ui.ShowResult(
                     lastStage ? "OFFLINE PRACTICE CLEARED" : "PRACTICE STAGE CLEARED",
                     $"{def.displayName} defeated in Practice Mode.\nAccuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%){syncNote}",
@@ -958,6 +1035,7 @@ namespace KnowledgeWarrior.Combat
             {
                 BattleAudioManager.Instance?.PlayDefeatStinger();
                 _lastDefeatRequiresRestart = true;
+                SubjectCheckpointManager.ClearCheckpoint(_selectedSubject, isOfflineOverride: true);
                 ui.ShowResult(
                     "PRACTICE DEFEATED",
                     $"{def.displayName} defeated you in Practice Mode.\nAccuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%){syncNote}",
@@ -1138,9 +1216,9 @@ namespace KnowledgeWarrior.Combat
             BattleAudioManager.Instance?.PlayButtonClick();
             AuthManager.Instance?.RecordUserActivity();
             ui.HideResult();
+            SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
             if (!OfflinePracticeManager.IsOfflinePracticeMode)
             {
-                SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
                 syncManager?.SaveSubjectCheckpointOnline(_selectedSubject, 0, 0, 0, false);
             }
             ReviveAndSetupPlayer();
@@ -1149,9 +1227,9 @@ namespace KnowledgeWarrior.Combat
 
         private void RestartAndOpenLobbyAfterDefeat()
         {
+            SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
             if (!OfflinePracticeManager.IsOfflinePracticeMode)
             {
-                SubjectCheckpointManager.ClearCheckpoint(_selectedSubject);
                 syncManager?.SaveSubjectCheckpointOnline(_selectedSubject, 0, 0, 0, false);
             }
             OpenCurrentSubjectLobbyAfterResult();

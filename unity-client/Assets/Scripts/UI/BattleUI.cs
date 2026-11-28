@@ -32,6 +32,7 @@ namespace KnowledgeWarrior.UI
         [SerializeField] private RectTransform playerHpGhost;
         [SerializeField] private RectTransform playerXpFill;
         [SerializeField] private TMP_Text playerXpText;
+        [SerializeField] private TMP_Text playerCoinText;
 
         [Header("Enemy HUD")]
         [SerializeField] private TMP_Text enemyNameText;
@@ -101,11 +102,15 @@ namespace KnowledgeWarrior.UI
             _onContinue = onContinue;
             _onResult = onResult;
             _safeAreaObject = transform.Find("SafeArea")?.gameObject;
+            var coinFill = _safeAreaObject != null
+                ? PortraitLayoutController.EnsureCoinHud(_safeAreaObject.transform, ref playerCoinText)
+                : null;
             _hudFx ??= BattleHudDecorator.Dress(new BattleHudRefs
             {
                 canvasRoot = (RectTransform)transform,
                 playerHpFill = playerHpFill,
                 playerXpFill = playerXpFill,
+                coinHudFill = coinFill,
                 enemyHpFill = enemyHpFill,
                 questionPanel = questionPanel,
                 feedbackGroup = feedbackGroup,
@@ -191,10 +196,14 @@ namespace KnowledgeWarrior.UI
             if (playerXpText != null)
             {
                 int pts = !string.IsNullOrWhiteSpace(subject) ? ProgressManager.GetSubjectPoints(subject) : xp;
-                int coins = ProgressManager.Current.coins;
                 playerXpText.text = OfflinePracticeManager.IsOfflinePracticeMode
-                    ? $"OFFLINE PRACTICE  ({xp}/{xpToNext} XP)"
-                    : $"{coins} COINS  •  {pts} PTS";
+                    ? $"OFFLINE  ({xp}/{xpToNext} XP)"
+                    : $"{pts} PTS  •  {xp}/{xpToNext} XP";
+            }
+            if (playerCoinText != null)
+            {
+                int coins = ProgressManager.Current.coins;
+                playerCoinText.text = $"{coins} COINS";
             }
         }
 
@@ -453,15 +462,34 @@ namespace KnowledgeWarrior.UI
 
         public void SpawnPopup(Vector3 worldPosition, string message, Color color, float scale = 1f)
         {
-            if (popupLayer == null) return;
+            if (TryWorldToPopupLocal(worldPosition, out var local))
+            {
+                DamagePopup.Create(popupLayer, local, message, color, scale);
+            }
+        }
+
+        /// <summary>Triggers the fighter's emote posture and spawns an emote bubble above its anchor.</summary>
+        public void SpawnEmote(CombatUnit unit, CombatEmoteType emote, string customLabel = null)
+        {
+            if (unit == null) return;
+            unit.PlayEmote(emote);
+            if (TryWorldToPopupLocal(unit.EmoteAnchor, out var local))
+            {
+                CombatEmotePopup.Create(popupLayer, local, emote, customLabel);
+            }
+        }
+
+        private bool TryWorldToPopupLocal(Vector3 worldPosition, out Vector2 local)
+        {
+            local = Vector2.zero;
+            if (popupLayer == null) return false;
             var cam = worldCamera != null ? worldCamera : Camera.main;
-            if (cam == null) return;
+            if (cam == null) return false;
 
             Vector2 screen = cam.WorldToScreenPoint(worldPosition);
             var canvas = popupLayer.GetComponentInParent<Canvas>();
             Camera uiCam = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
-            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(popupLayer, screen, uiCam, out var local))
-                DamagePopup.Create(popupLayer, local, message, color, scale);
+            return RectTransformUtility.ScreenPointToLocalPointInRectangle(popupLayer, screen, uiCam, out local);
         }
 
         private void Update()
