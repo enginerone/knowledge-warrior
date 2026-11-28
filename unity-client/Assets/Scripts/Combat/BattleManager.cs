@@ -83,6 +83,8 @@ namespace KnowledgeWarrior.Combat
 
         private BiomeSelectModal _biomeModal;
         private SubjectLobbyModal _subjectLobbyModal;
+        private GameMechanicsModal _gameMechanicsModal;
+        private BrandIntroModal _brandIntroModal;
         private AuthGateModal _authGateModal;
         private NetworkGateModal _networkGateModal;
 
@@ -134,9 +136,12 @@ namespace KnowledgeWarrior.Combat
                     OnSubjectBiomeChosen,
                     OnHudSubjectLobbiesClicked,
                     SwitchFromOfflineToOnlineMode);
-                _subjectLobbyModal = SubjectLobbyModal.EnsureOnCanvas(canvas, StartSubjectMonsterExpedition);
+                _subjectLobbyModal = SubjectLobbyModal.EnsureOnCanvas(canvas, OnSubjectLobbyLaunchRequested);
+                _gameMechanicsModal = GameMechanicsModal.EnsureOnCanvas(canvas);
                 _authGateModal = AuthGateModal.EnsureOnCanvas(canvas, OnAuthenticatedSessionReady);
                 _networkGateModal = NetworkGateModal.EnsureOnCanvas(canvas, OnRetryOnlineConnection, EnterOfflinePracticeModeFromGate);
+                _brandIntroModal = BrandIntroModal.EnsureOnCanvas(canvas);
+                _brandIntroModal.PlayIntro();
             }
 
             if (AuthManager.Instance != null)
@@ -541,6 +546,29 @@ namespace KnowledgeWarrior.Combat
             {
                 bool shouldResume = SubjectCheckpointManager.TryGetCheckpoint(_selectedSubject, out _);
                 StartSubjectMonsterExpedition(biomeName, _selectedSubject, shouldResume);
+            }
+        }
+
+        private void OnSubjectLobbyLaunchRequested(
+            string selectedBiomeTitle,
+            string subjectFilter,
+            bool resumeCheckpoint)
+        {
+            if (!EnsureConnectedOrBlock()) return;
+            AuthManager.Instance?.RecordUserActivity();
+
+            if (_gameMechanicsModal != null)
+            {
+                _gameMechanicsModal.ShowForSubject(
+                    selectedBiomeTitle,
+                    subjectFilter,
+                    resumeCheckpoint,
+                    () => StartSubjectMonsterExpedition(selectedBiomeTitle, subjectFilter, resumeCheckpoint),
+                    () => _subjectLobbyModal?.ShowForSubject(selectedBiomeTitle, subjectFilter));
+            }
+            else
+            {
+                StartSubjectMonsterExpedition(selectedBiomeTitle, subjectFilter, resumeCheckpoint);
             }
         }
 
@@ -1078,6 +1106,7 @@ namespace KnowledgeWarrior.Combat
                     subject = _selectedSubject,
                     xpGained = xp,
                     victory = victory,
+                    isBoss = def.isBoss,
                     stageIndex = _stageIndex,
                     clearCheckpoint = isFinalStageWin,
                     correctAnswers = _battleCorrect,
@@ -1133,7 +1162,7 @@ namespace KnowledgeWarrior.Combat
             int accuracy = _battleTotal > 0 ? Mathf.RoundToInt(100f * _battleCorrect / _battleTotal) : 0;
             string badgeName = SubjectTierSystem.GetBadgeNameForLevel(sp.level);
             int nextXp = SubjectTierSystem.XpToNextSubjectLevel(sp.level);
-            int coinsEarned = victory ? SubjectTierSystem.StageWinCoinReward : 0;
+            int coinsEarned = victory ? SubjectTierSystem.GetStageWinCoinReward(def.isBoss) : 0;
             int totalCoins = ProgressManager.Current.coins;
 
             string body = $"+{awardedXp} {_selectedSubject} XP  •  Accuracy: {_battleCorrect}/{_battleTotal} ({accuracy}%)\n" +
@@ -1146,7 +1175,7 @@ namespace KnowledgeWarrior.Combat
             }
             if (sp.level >= SubjectTierSystem.MaxLevel)
             {
-                body += $"\n<color=#FFD24D>EXPERT LEVEL 100 MASTERED! Stage victories continue awarding +{SubjectTierSystem.StageWinCoinReward} Coins, Subject Points, and Leaderboard XP.</color>";
+                body += $"\n<color=#FFD24D>EXPERT LEVEL 100 MASTERED! Stage victories continue awarding +{SubjectTierSystem.StageWinCoinReward} Coins (+{SubjectTierSystem.BossWinCoinReward} on Boss), Subject Points, and Leaderboard XP.</color>";
             }
 
             if (victory)

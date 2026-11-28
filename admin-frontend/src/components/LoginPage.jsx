@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import brandLogo from '../assets/brand-logo.png';
 
 export default function LoginPage({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
@@ -51,20 +52,20 @@ export default function LoginPage({ onLoginSuccess }) {
       }}>
         {/* Header Icon & Title */}
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <div style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '28px',
-            boxShadow: '0 0 24px rgba(59, 130, 246, 0.45)',
-            marginBottom: '16px',
-          }}>
-            ⚔️
-          </div>
+          <img
+            src={brandLogo}
+            alt="Knowledge Warrior Logo"
+            style={{
+              width: '78px',
+              height: '78px',
+              borderRadius: '18px',
+              objectFit: 'cover',
+              border: '1px solid rgba(255, 210, 77, 0.6)',
+              boxShadow: '0 0 26px rgba(77, 225, 255, 0.35)',
+              marginBottom: '14px',
+              display: 'inline-block',
+            }}
+          />
 
           <h1 style={{
             fontSize: '24px',

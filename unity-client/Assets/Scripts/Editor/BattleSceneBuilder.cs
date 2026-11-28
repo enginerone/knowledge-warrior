@@ -31,6 +31,8 @@ namespace KnowledgeWarrior.EditorTools
         private const string BossPath = "Assets/Art/Sprites/Boss_NullPointerDragon.png";
         private const string ShadowPath = "Assets/Art/Sprites/Shadow.png";
         private const string RoundedPath = "Assets/Art/UI/UI_RoundedRect.png";
+        private const string BrandLogoArtPath = "Assets/Art/UI/BrandLogo_KnowledgeWarrior.png";
+        private const string BrandLogoResPath = "Assets/Resources/UI/BrandLogo_KnowledgeWarrior.png";
         private const string UnlitMaterialPath = "Packages/com.unity.render-pipelines.universal/Runtime/Materials/Sprite-Unlit-Default.mat";
 
         private static readonly string[] AdditionalMonsterSpritePaths =
@@ -208,6 +210,8 @@ namespace KnowledgeWarrior.EditorTools
             foreach (var path in AdditionalBackgroundPaths)
                 ConfigureSprite(path, SpriteAlignment.Center, Vector4.zero);
             ConfigureSprite(RoundedPath, SpriteAlignment.Center, new Vector4(48, 48, 48, 48));
+            ConfigureSprite(BrandLogoArtPath, SpriteAlignment.Center, Vector4.zero);
+            ConfigureSprite(BrandLogoResPath, SpriteAlignment.Center, Vector4.zero);
         }
 
         private static void ConfigureSprite(string path, SpriteAlignment alignment, Vector4 border)

@@ -22,8 +22,9 @@ namespace KnowledgeWarrior.EditorTools
         public const string OfficialPackageId = "com.knowledgewarrior.game";
 
         private const string KeystorePropsRelativePath = "Keystores/keystore.properties";
+        private const string BrandLogoAssetPath = "Assets/Art/UI/BrandLogo_KnowledgeWarrior.png";
         private const string HeroIconAssetPath = "Assets/Art/Sprites/Hero_KnowledgeWarrior.png";
-        private const string SessionInitializedKey = "KW_AndroidUniversalSettingsApplied_v1";
+        private const string SessionInitializedKey = "KW_AndroidUniversalSettingsApplied_v2";
 
         public int callbackOrder => 0;
 
@@ -128,6 +129,7 @@ namespace KnowledgeWarrior.EditorTools
                 new[] { GraphicsDeviceType.OpenGLES3, GraphicsDeviceType.Vulkan });
 
             ApplyAppIcon();
+            ApplyBrandSplashSettings();
             bool releaseSigned = ApplyKeystoreCredentialsFromDisk(logStatus: true);
 
             AssetDatabase.SaveAssets();
@@ -154,22 +156,52 @@ namespace KnowledgeWarrior.EditorTools
 
         private static void ApplyAppIcon()
         {
-            var iconTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(HeroIconAssetPath);
+            var iconTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(BrandLogoAssetPath)
+                ?? AssetDatabase.LoadAssetAtPath<Texture2D>(HeroIconAssetPath);
             if (iconTexture == null)
             {
                 return;
             }
 
-            int[] sizes = PlayerSettings.GetIconSizes(NamedBuildTarget.Unknown, IconKind.Any);
-            if (sizes != null && sizes.Length > 0)
-            {
-                var icons = new Texture2D[sizes.Length];
-                for (int i = 0; i < icons.Length; i++)
-                {
-                    icons[i] = iconTexture;
-                }
+            ApplySimpleIconGroup(NamedBuildTarget.Unknown, IconKind.Any, iconTexture);
+            ApplySimpleIconGroup(NamedBuildTarget.Android, IconKind.Any, iconTexture);
 
-                PlayerSettings.SetIcons(NamedBuildTarget.Unknown, icons, IconKind.Any);
+            // Populate Android Adaptive platform icon slots so Android 8-15+ launchers never show the Unity cube.
+            var adaptiveIcons = PlayerSettings.GetPlatformIcons(NamedBuildTarget.Android, UnityEditor.Android.AndroidPlatformIconKind.Adaptive);
+            if (adaptiveIcons != null && adaptiveIcons.Length > 0)
+            {
+                for (int i = 0; i < adaptiveIcons.Length; i++)
+                {
+                    adaptiveIcons[i].SetTextures(iconTexture, iconTexture);
+                }
+                PlayerSettings.SetPlatformIcons(NamedBuildTarget.Android, UnityEditor.Android.AndroidPlatformIconKind.Adaptive, adaptiveIcons);
+            }
+        }
+
+        private static void ApplySimpleIconGroup(NamedBuildTarget target, IconKind kind, Texture2D iconTexture)
+        {
+            int[] sizes = PlayerSettings.GetIconSizes(target, kind);
+            if (sizes == null || sizes.Length == 0) return;
+            var icons = new Texture2D[sizes.Length];
+            for (int i = 0; i < icons.Length; i++)
+            {
+                icons[i] = iconTexture;
+            }
+            PlayerSettings.SetIcons(target, icons, kind);
+        }
+
+        private static void ApplyBrandSplashSettings()
+        {
+            PlayerSettings.SplashScreen.show = false;
+            PlayerSettings.SplashScreen.showUnityLogo = false;
+            PlayerSettings.SplashScreen.backgroundColor = new Color(0.031f, 0.043f, 0.110f, 1f);
+            var logoSprite = AssetDatabase.LoadAssetAtPath<Sprite>(BrandLogoAssetPath);
+            if (logoSprite != null)
+            {
+                PlayerSettings.SplashScreen.logos = new[]
+                {
+                    PlayerSettings.SplashScreenLogo.Create(2.0f, logoSprite)
+                };
             }
         }
 

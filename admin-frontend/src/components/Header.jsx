@@ -1,4 +1,5 @@
 import React from 'react';
+import brandLogo from '../assets/brand-logo.png';
 
 export default function Header({ user, onLogout }) {
   return (
@@ -14,19 +15,18 @@ export default function Header({ user, onLogout }) {
       zIndex: 40,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-        <div style={{
-          width: '38px',
-          height: '38px',
-          borderRadius: '10px',
-          background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '20px',
-          boxShadow: '0 0 16px rgba(59, 130, 246, 0.4)',
-        }}>
-          ⚔️
-        </div>
+        <img
+          src={brandLogo}
+          alt="Knowledge Warrior Logo"
+          style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            objectFit: 'cover',
+            border: '1px solid rgba(255, 210, 77, 0.55)',
+            boxShadow: '0 0 16px rgba(77, 225, 255, 0.32)',
+          }}
+        />
         <div>
           <h1 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
             KNOWLEDGE WARRIOR

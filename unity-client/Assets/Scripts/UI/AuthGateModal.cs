@@ -351,8 +351,8 @@ namespace KnowledgeWarrior.UI
             _modalGroup = backdrop.gameObject.AddComponent<CanvasGroup>();
 
             var cardBorder = CreateImage("AuthCardBorder", backdrop.rectTransform, BorderColor);
-            float cardOffsetY = SyncManager.IsLocalDevelopmentEnvironment ? 120f : 60f;
-            Place(cardBorder.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, cardOffsetY), new Vector2(960, 712));
+            float cardOffsetY = SyncManager.IsLocalDevelopmentEnvironment ? 72f : 24f;
+            Place(cardBorder.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, cardOffsetY), new Vector2(960, 896));
 
             if (SyncManager.IsLocalDevelopmentEnvironment)
             {
@@ -370,21 +370,31 @@ namespace KnowledgeWarrior.UI
             var card = CreateImage("AuthCardFill", cardBorder.rectTransform, PanelColor).rectTransform;
             Stretch(card, 2, 2, 2, 2);
 
-            _headerSubtitle = CreateText("HeaderSubtitle", card, "", 22, TextSoft, TextAlignmentOptions.Center, false,
-                r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -28), new Vector2(860, 38)));
+            var logoFrame = CreateImage("BrandLogoFrame", card, new Color(Gold.r, Gold.g, Gold.b, 0.65f));
+            Place(logoFrame.rectTransform, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -18), new Vector2(118, 118));
+            var logoImg = CreateImage("BrandLogo", logoFrame.rectTransform, Color.white);
+            Stretch(logoImg.rectTransform, 3, 3, 3, 3);
+            logoImg.sprite = UISprites.BrandLogo;
+            logoImg.preserveAspect = true;
+
+            CreateText("BrandTitle", card, "KNOWLEDGE WARRIOR", 32, Gold, TextAlignmentOptions.Center, true,
+                r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -142), new Vector2(860, 40)));
+
+            _headerSubtitle = CreateText("HeaderSubtitle", card, "", 20, TextSoft, TextAlignmentOptions.Center, false,
+                r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -184), new Vector2(860, 44)));
 
             var regTabBtn = CreateButton("TabRegister", card, Cyan, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(1f, 1f), new Vector2(-10, -80), new Vector2(390, 54), "1. REGISTRATION PAGE", 22, DarkText, out _regTabLabel);
+                new Vector2(1f, 1f), new Vector2(-10, -238), new Vector2(390, 54), "1. REGISTRATION PAGE", 22, DarkText, out _regTabLabel);
             _regTabBg = regTabBtn.GetComponent<Image>();
             regTabBtn.onClick.AddListener(() => SwitchPage(AuthPage.Register));
 
             var loginTabBtn = CreateButton("TabLogin", card, InputBgColor, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0f, 1f), new Vector2(10, -80), new Vector2(390, 54), "2. LOGIN PAGE", 22, TextSoft, out _loginTabLabel);
+                new Vector2(0f, 1f), new Vector2(10, -238), new Vector2(390, 54), "2. LOGIN PAGE", 22, TextSoft, out _loginTabLabel);
             _loginTabBg = loginTabBtn.GetComponent<Image>();
             loginTabBtn.onClick.AddListener(() => SwitchPage(AuthPage.Login));
 
             _feedbackText = CreateText("FeedbackText", card, "", 22, Green, TextAlignmentOptions.Center, true,
-                r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -144), new Vector2(840, 56)));
+                r => Place(r, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -302), new Vector2(840, 56)));
             _feedbackText.enableAutoSizing = true;
             _feedbackText.fontSizeMin = 15f;
             _feedbackText.fontSizeMax = 22f;
@@ -392,37 +402,37 @@ namespace KnowledgeWarrior.UI
             var regRt = CreateContainer("RegisterPage", card);
             _registerPageRoot = regRt.gameObject;
 
-            CreateLabel("LblUser", regRt, "UNIQUE USERNAME", new Vector2(0, -206));
-            _regUsernameInput = CreateInputField("RegUsername", regRt, "Enter a unique username...", false, new Vector2(0, -242), new Vector2(800, 62));
+            CreateLabel("LblUser", regRt, "UNIQUE USERNAME", new Vector2(0, -364));
+            _regUsernameInput = CreateInputField("RegUsername", regRt, "Enter a unique username", false, new Vector2(0, -400), new Vector2(800, 62));
             _regUsernameInput.characterLimit = 30;
             _regUsernameInput.onEndEdit.AddListener(OnRegUsernameEdited);
 
-            CreateLabel("LblEmail", regRt, "VALID GMAIL ADDRESS (REQUIRED FOR PASSWORD RESET OTP)", new Vector2(0, -324));
-            _regEmailInput = CreateInputField("RegEmail", regRt, "Enter your valid @gmail.com address...", false, new Vector2(0, -360), new Vector2(800, 62));
+            CreateLabel("LblEmail", regRt, "VALID GMAIL ADDRESS (REQUIRED FOR PASSWORD RESET OTP)", new Vector2(0, -482));
+            _regEmailInput = CreateInputField("RegEmail", regRt, "Enter your valid @gmail.com address", false, new Vector2(0, -518), new Vector2(800, 62));
             _regEmailInput.onEndEdit.AddListener(OnRegEmailEdited);
 
-            CreateLabel("LblPass", regRt, "PASSWORD (MIN. 6 CHARACTERS)", new Vector2(0, -442));
-            _regPasswordInput = CreateInputField("RegPassword", regRt, "Create a strong password...", true, new Vector2(0, -478), new Vector2(800, 62));
+            CreateLabel("LblPass", regRt, "PASSWORD (MIN. 6 CHARACTERS)", new Vector2(0, -600));
+            _regPasswordInput = CreateInputField("RegPassword", regRt, "Create a strong password", true, new Vector2(0, -636), new Vector2(800, 62));
 
             var regSubmitBtn = CreateButton("RegisterSubmitBtn", regRt, Cyan, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(0, -570), new Vector2(800, 72), "REGISTER AND PROCEED TO LOGIN", 26, DarkText, out _);
+                new Vector2(0.5f, 1), new Vector2(0, -728), new Vector2(800, 72), "REGISTER AND PROCEED TO LOGIN", 26, DarkText, out _);
             regSubmitBtn.onClick.AddListener(OnRegisterSubmit);
 
             var loginRt = CreateContainer("LoginPage", card);
             _loginPageRoot = loginRt.gameObject;
 
-            CreateLabel("LblLoginUser", loginRt, "REGISTERED USERNAME", new Vector2(0, -220));
-            _loginUsernameInput = CreateInputField("LoginUsername", loginRt, "Enter your registered username...", false, new Vector2(0, -256), new Vector2(800, 64));
+            CreateLabel("LblLoginUser", loginRt, "REGISTERED USERNAME", new Vector2(0, -378));
+            _loginUsernameInput = CreateInputField("LoginUsername", loginRt, "Enter your registered username", false, new Vector2(0, -414), new Vector2(800, 64));
 
-            CreateLabel("LblLoginPass", loginRt, "PASSWORD", new Vector2(0, -346));
-            _loginPasswordInput = CreateInputField("LoginPassword", loginRt, "Enter your password...", true, new Vector2(0, -382), new Vector2(800, 64));
+            CreateLabel("LblLoginPass", loginRt, "PASSWORD", new Vector2(0, -504));
+            _loginPasswordInput = CreateInputField("LoginPassword", loginRt, "Enter your password", true, new Vector2(0, -540), new Vector2(800, 64));
 
             var loginSubmitBtn = CreateButton("LoginSubmitBtn", loginRt, Green, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(0, -480), new Vector2(800, 74), "SIGN IN", 26, DarkText, out _);
+                new Vector2(0.5f, 1), new Vector2(0, -638), new Vector2(800, 74), "SIGN IN", 26, DarkText, out _);
             loginSubmitBtn.onClick.AddListener(OnLoginSubmit);
 
             var forgotBtn = CreateButton("ForgotPasswordBtn", loginRt, Violet, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1f), new Vector2(0, -576), new Vector2(460, 56), "FORGOT PASSWORD? (EMAIL OTP)", 20, DarkText, out _);
+                new Vector2(0.5f, 1f), new Vector2(0, -734), new Vector2(460, 56), "FORGOT PASSWORD? (EMAIL OTP)", 20, DarkText, out _);
             forgotBtn.onClick.AddListener(() =>
             {
                 if (!string.IsNullOrWhiteSpace(_regEmailInput.text) && string.IsNullOrWhiteSpace(_forgotEmailInput.text))
@@ -435,33 +445,33 @@ namespace KnowledgeWarrior.UI
             var forgotRt = CreateContainer("ForgotPasswordPage", card);
             _forgotPageRoot = forgotRt.gameObject;
 
-            CreateLabel("LblForgotEmail", forgotRt, "1. REGISTERED GMAIL ADDRESS", new Vector2(0, -206));
-            _forgotEmailInput = CreateInputField("ForgotEmail", forgotRt, "Enter your registered @gmail.com address...", false, new Vector2(-120, -242), new Vector2(560, 60));
+            CreateLabel("LblForgotEmail", forgotRt, "1. REGISTERED GMAIL ADDRESS", new Vector2(0, -364));
+            _forgotEmailInput = CreateInputField("ForgotEmail", forgotRt, "Enter your registered @gmail.com address", false, new Vector2(-120, -400), new Vector2(560, 60));
 
             var sendOtpBtn = CreateButton("SendOtpBtn", forgotRt, Gold, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(290, -242), new Vector2(220, 60), "SEND OTP", 22, DarkText, out _);
+                new Vector2(0.5f, 1), new Vector2(290, -400), new Vector2(220, 60), "SEND OTP", 22, DarkText, out _);
             sendOtpBtn.onClick.AddListener(OnSendOtpClicked);
 
-            CreateLabel("LblForgotOtp", forgotRt, "2. 6-DIGIT EMAIL OTP CODE", new Vector2(0, -324));
-            _forgotOtpInput = CreateInputField("ForgotOtp", forgotRt, "Enter 6-digit OTP from email...", false, new Vector2(-120, -360), new Vector2(560, 60));
+            CreateLabel("LblForgotOtp", forgotRt, "2. 6-DIGIT EMAIL OTP CODE", new Vector2(0, -482));
+            _forgotOtpInput = CreateInputField("ForgotOtp", forgotRt, "Enter 6-digit OTP from email", false, new Vector2(-120, -518), new Vector2(560, 60));
             _forgotOtpInput.contentType = TMP_InputField.ContentType.IntegerNumber;
             _forgotOtpInput.characterLimit = 6;
 
             var verifyOtpBtn = CreateButton("VerifyOtpBtn", forgotRt, Cyan, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(290, -360), new Vector2(220, 60), "VERIFY OTP", 22, DarkText, out _);
+                new Vector2(0.5f, 1), new Vector2(290, -518), new Vector2(220, 60), "VERIFY OTP", 22, DarkText, out _);
             verifyOtpBtn.onClick.AddListener(OnVerifyOtpOnlyClicked);
 
-            CreateLabel("LblNewPass", forgotRt, "3. NEW PASSWORD (MIN. 6 CHARS, DIFFERENT FROM PREVIOUS)", new Vector2(0, -442));
-            _forgotNewPasswordInput = CreateInputField("ForgotNewPass", forgotRt, "Enter a new password different from your previous one...", true, new Vector2(0, -478), new Vector2(800, 60));
+            CreateLabel("LblNewPass", forgotRt, "3. NEW PASSWORD (MIN. 6 CHARS, DIFFERENT FROM PREVIOUS)", new Vector2(0, -600));
+            _forgotNewPasswordInput = CreateInputField("ForgotNewPass", forgotRt, "Enter a new password different from your previous one", true, new Vector2(0, -636), new Vector2(800, 60));
 
             var savePassBtn = CreateButton("SaveNewPassBtn", forgotRt, Green, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                new Vector2(0.5f, 1), new Vector2(0, -564), new Vector2(800, 70), "CHANGE PASSWORD AND RETURN TO LOGIN", 24, DarkText, out _);
+                new Vector2(0.5f, 1), new Vector2(0, -722), new Vector2(800, 70), "CHANGE PASSWORD AND RETURN TO LOGIN", 24, DarkText, out _);
             savePassBtn.onClick.AddListener(OnResetPasswordSubmit);
 
             if (SyncManager.IsLocalDevelopmentEnvironment)
             {
                 _openInboxPreviewBtn = CreateButton("OpenEmailInboxBtn", forgotRt, Violet, new Vector2(0.5f, 1), new Vector2(0.5f, 1),
-                    new Vector2(0.5f, 1f), new Vector2(0, -648), new Vector2(460, 48), "OPEN LOCAL TEST INBOX (DEV ONLY)", 18, DarkText, out _);
+                    new Vector2(0.5f, 1f), new Vector2(0, -806), new Vector2(460, 48), "OPEN LOCAL TEST INBOX (DEV ONLY)", 18, DarkText, out _);
                 _openInboxPreviewBtn.onClick.AddListener(() =>
                 {
                     if (AuthManager.Instance != null && !string.IsNullOrWhiteSpace(AuthManager.Instance.LastOtpPreviewUrl))
