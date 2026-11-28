@@ -24,7 +24,7 @@ namespace KnowledgeWarrior.EditorTools
     public static class BattleSceneBuilder
     {
         private const string ScenePath = "Assets/Scenes/Battle.unity";
-        private const string BackgroundPath = "Assets/Art/Backgrounds/BG_BinaryWoods.jpg";
+        private const string BackgroundPath = "Assets/Art/Backgrounds/BG_Programming.jpg";
         private const string HeroPath = "Assets/Art/Sprites/Hero_KnowledgeWarrior.png";
         private const string SlimePath = "Assets/Art/Sprites/Enemy_SyntaxSlime.png";
         private const string ImpPath = "Assets/Art/Sprites/Enemy_GlitchImp.png";
@@ -32,6 +32,49 @@ namespace KnowledgeWarrior.EditorTools
         private const string ShadowPath = "Assets/Art/Sprites/Shadow.png";
         private const string RoundedPath = "Assets/Art/UI/UI_RoundedRect.png";
         private const string UnlitMaterialPath = "Packages/com.unity.render-pipelines.universal/Runtime/Materials/Sprite-Unlit-Default.mat";
+
+        private static readonly string[] AdditionalMonsterSpritePaths =
+        {
+            "Assets/Art/Sprites/Monster_Programming.png",
+            "Assets/Art/Sprites/Monster_WebDevelopment.png",
+            "Assets/Art/Sprites/Monster_Networking.png",
+            "Assets/Art/Sprites/Monster_Databases.png",
+            "Assets/Art/Sprites/Monster_Cybersecurity.png",
+            "Assets/Art/Sprites/Monster_ComputerSystems.png",
+            "Assets/Art/Sprites/Monster_ArtificialIntelligence.png",
+            "Assets/Art/Sprites/Monster_SoftwareEngineering.png",
+            "Assets/Resources/Monsters/Enemy_SyntaxSlime.png",
+            "Assets/Resources/Monsters/Enemy_GlitchImp.png",
+            "Assets/Resources/Monsters/Boss_NullPointerDragon.png",
+            "Assets/Resources/Monsters/Monster_Programming.png",
+            "Assets/Resources/Monsters/Monster_WebDevelopment.png",
+            "Assets/Resources/Monsters/Monster_Networking.png",
+            "Assets/Resources/Monsters/Monster_Databases.png",
+            "Assets/Resources/Monsters/Monster_Cybersecurity.png",
+            "Assets/Resources/Monsters/Monster_ComputerSystems.png",
+            "Assets/Resources/Monsters/Monster_ArtificialIntelligence.png",
+            "Assets/Resources/Monsters/Monster_SoftwareEngineering.png"
+        };
+
+        private static readonly string[] AdditionalBackgroundPaths =
+        {
+            "Assets/Art/Backgrounds/BG_Programming.jpg",
+            "Assets/Art/Backgrounds/BG_WebDevelopment.jpg",
+            "Assets/Art/Backgrounds/BG_Networking.jpg",
+            "Assets/Art/Backgrounds/BG_Databases.jpg",
+            "Assets/Art/Backgrounds/BG_Cybersecurity.jpg",
+            "Assets/Art/Backgrounds/BG_ComputerSystems.jpg",
+            "Assets/Art/Backgrounds/BG_ArtificialIntelligence.jpg",
+            "Assets/Art/Backgrounds/BG_SoftwareEngineering.jpg",
+            "Assets/Resources/Backgrounds/BG_Programming.jpg",
+            "Assets/Resources/Backgrounds/BG_WebDevelopment.jpg",
+            "Assets/Resources/Backgrounds/BG_Networking.jpg",
+            "Assets/Resources/Backgrounds/BG_Databases.jpg",
+            "Assets/Resources/Backgrounds/BG_Cybersecurity.jpg",
+            "Assets/Resources/Backgrounds/BG_ComputerSystems.jpg",
+            "Assets/Resources/Backgrounds/BG_ArtificialIntelligence.jpg",
+            "Assets/Resources/Backgrounds/BG_SoftwareEngineering.jpg"
+        };
 
         private const float FeetY = 1.05f;
         private const float HeroX = -1.45f;
@@ -158,8 +201,12 @@ namespace KnowledgeWarrior.EditorTools
         {
             foreach (var path in new[] { HeroPath, SlimePath, ImpPath, BossPath })
                 ConfigureSprite(path, SpriteAlignment.BottomCenter, Vector4.zero);
+            foreach (var path in AdditionalMonsterSpritePaths)
+                ConfigureSprite(path, SpriteAlignment.BottomCenter, Vector4.zero);
             ConfigureSprite(ShadowPath, SpriteAlignment.Center, Vector4.zero);
             ConfigureSprite(BackgroundPath, SpriteAlignment.Center, Vector4.zero);
+            foreach (var path in AdditionalBackgroundPaths)
+                ConfigureSprite(path, SpriteAlignment.Center, Vector4.zero);
             ConfigureSprite(RoundedPath, SpriteAlignment.Center, new Vector4(48, 48, 48, 48));
         }
 
@@ -249,7 +296,7 @@ namespace KnowledgeWarrior.EditorTools
             var fitter = go.AddComponent<BackgroundFitter>();
             var so = new SerializedObject(fitter);
             so.FindProperty("targetCamera").objectReferenceValue = cam;
-            so.FindProperty("groundInImage").floatValue = 0.42f;
+            so.FindProperty("groundInImage").floatValue = ThemeManager.PaintedPortraitGroundRatio;
             so.FindProperty("groundWorldY").floatValue = FeetY;
             so.ApplyModifiedPropertiesWithoutUndo();
         }

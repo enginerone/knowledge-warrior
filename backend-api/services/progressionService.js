@@ -11,6 +11,8 @@ const DEFAULT_SUBJECTS = [
   'Databases',
   'Cybersecurity',
   'Computer Systems',
+  'Artificial Intelligence',
+  'UI/UX & Software Engineering',
 ];
 
 function xpToNextSubjectLevel(level) {

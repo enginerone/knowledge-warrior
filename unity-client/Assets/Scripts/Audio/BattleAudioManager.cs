@@ -479,6 +479,24 @@ namespace KnowledgeWarrior.Audio
                     baseBpm = 76f,
                     overtoneMix = 0.25f
                 },
+                "artificial intelligence" => new BiomeMusicProfile
+                {
+                    scale = new[] { 293.66f, 329.63f, 369.99f, 440.00f, 493.88f, 554.37f, 587.33f, 659.25f },
+                    chordRoots = new[] { 0, 4, 2, 5 },
+                    calmMelody = new[] { 0, -1, 2, 4, -1, 5, 4, -1, 3, -1, 5, 6, -1, 4, 2, -1, 5, 4, -1, 3, 2, -1, 1, -1, 2, 4, 5, -1, 3, -1, 0, -1 },
+                    bossMelody = new[] { 0, 4, 5, 4, 7, 5, 4, 2, 3, 5, 6, 5, 4, 2, 3, -1, 5, 6, 7, 6, 5, 4, 2, 4, 3, 4, 5, 4, 2, 1, 0, -1 },
+                    baseBpm = 79f,
+                    overtoneMix = 0.28f
+                },
+                "ui/ux & software engineering" or "software engineering" or "ui/ux" => new BiomeMusicProfile
+                {
+                    scale = new[] { 261.63f, 293.66f, 329.63f, 392.00f, 440.00f, 493.88f, 523.25f, 587.33f },
+                    chordRoots = new[] { 0, 5, 3, 4 },
+                    calmMelody = new[] { 0, 2, -1, 4, -1, 5, 4, -1, 2, -1, 3, 4, -1, 2, 0, -1, 4, 5, -1, 6, 4, -1, 2, -1, 3, -1, 4, 2, -1, 1, 0, -1 },
+                    bossMelody = new[] { 0, 2, 4, 5, 6, 5, 4, 2, 3, 4, 6, 5, 4, 3, 2, -1, 5, 6, 7, 6, 4, 3, 2, 3, 2, 3, 4, 3, 2, 1, 0, -1 },
+                    baseBpm = 75f,
+                    overtoneMix = 0.21f
+                },
                 _ => new BiomeMusicProfile
                 {
                     scale = new[] { 261.63f, 293.66f, 329.63f, 392.00f, 440.00f, 523.25f, 587.33f, 659.25f },

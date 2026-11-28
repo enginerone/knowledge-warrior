@@ -41,9 +41,13 @@ namespace KnowledgeWarrior.UI
             if (backgroundObject != null)
             {
                 var fitter = backgroundObject.GetComponent<BackgroundFitter>();
+                var sr = backgroundObject.GetComponent<SpriteRenderer>();
                 if (fitter != null)
                 {
-                    fitter.ConfigureGround(0.42f, ArenaGroundY);
+                    bool isPortraitBg = sr != null && sr.sprite != null && sr.sprite.bounds.size.y > sr.sprite.bounds.size.x;
+                    fitter.ConfigureGround(
+                        isPortraitBg ? ThemeManager.PaintedPortraitGroundRatio : ThemeManager.ProceduralGroundRatio,
+                        ArenaGroundY);
                 }
             }
 

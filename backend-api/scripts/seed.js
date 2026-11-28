@@ -167,6 +167,8 @@ async function seed() {
       'Databases',
       'Cybersecurity',
       'Computer Systems',
+      'Artificial Intelligence',
+      'UI/UX & Software Engineering',
     ];
 
     const defaultPlayerHash = await bcrypt.hash('Warrior123!', 10);

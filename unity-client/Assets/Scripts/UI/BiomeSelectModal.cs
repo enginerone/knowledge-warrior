@@ -222,9 +222,26 @@ namespace KnowledgeWarrior.UI
             var allQuestions = _questionManager != null ? _questionManager.All : Array.Empty<QuestionData>();
             var list = new List<BiomeOption>();
 
-            if (_questionManager == null) return list;
+            var subjectSet = new List<string>();
+            foreach (string defaultSubj in ProgressManager.DefaultSubjects)
+            {
+                if (!subjectSet.Any(s => string.Equals(s, defaultSubj, StringComparison.OrdinalIgnoreCase)))
+                {
+                    subjectSet.Add(defaultSubj);
+                }
+            }
+            if (_questionManager != null)
+            {
+                foreach (string qSubj in _questionManager.Subjects)
+                {
+                    if (!subjectSet.Any(s => string.Equals(s, qSubj, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        subjectSet.Add(qSubj);
+                    }
+                }
+            }
 
-            foreach (string subject in _questionManager.Subjects)
+            foreach (string subject in subjectSet)
             {
                 if (list.Count >= MaxBiomeCards) break;
 
@@ -264,6 +281,8 @@ namespace KnowledgeWarrior.UI
                 "databases" => ("Relational Ruins", Violet),
                 "cybersecurity" => ("Cipher Sanctum", Pink),
                 "computer systems" => ("Silicon Foundry", Green),
+                "artificial intelligence" => ("Neural Nexus", Cyan),
+                "ui/ux & software engineering" or "software engineering" or "ui/ux" => ("Design Studio", Gold),
                 _ => ($"{subject} Realm", (index % 3) switch { 0 => Cyan, 1 => Violet, _ => Gold })
             };
         }
