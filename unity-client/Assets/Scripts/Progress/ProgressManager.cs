@@ -34,14 +34,16 @@ namespace KnowledgeWarrior.Progress
         private const string LegacySaveFileName = "progress.json";
         public const int MaxLevel = SubjectTierSystem.MaxLevel;
 
-        private static readonly string[] DefaultSubjects =
+        public static readonly IReadOnlyList<string> DefaultSubjects = new[]
         {
             "Programming",
             "Web Development",
             "Networking",
             "Databases",
             "Cybersecurity",
-            "Computer Systems"
+            "Computer Systems",
+            "Artificial Intelligence",
+            "UI/UX & Software Engineering"
         };
 
         private static PlayerProgress _current;

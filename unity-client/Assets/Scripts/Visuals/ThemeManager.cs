@@ -9,6 +9,7 @@ namespace KnowledgeWarrior.Visuals
         public string subject;
         public string biomeTitle;
         public string tierSubtitle;
+        public string backgroundResourceName;
         public BadgeTier tier;
         public Color primaryAccent;
         public Color secondaryAccent;
@@ -26,7 +27,11 @@ namespace KnowledgeWarrior.Visuals
     {
         public static ThemeManager Instance { get; private set; }
 
+        public const float PaintedPortraitGroundRatio = 0.59375f;
+        public const float ProceduralGroundRatio = 0.42f;
+
         private readonly Dictionary<string, Sprite> _generatedBackgrounds = new();
+        private readonly Dictionary<string, Sprite> _loadedPaintedBackgrounds = new();
         private SpriteRenderer _backgroundRenderer;
 
         public SubjectTierTheme CurrentTheme { get; private set; }
@@ -67,23 +72,77 @@ namespace KnowledgeWarrior.Visuals
 
             if (_backgroundRenderer != null)
             {
-                _backgroundRenderer.sprite = GetOrCreateArenaBackgroundSprite(theme);
-                _backgroundRenderer.color = Color.white;
+                Sprite painted = LoadPaintedBackgroundSprite(theme.backgroundResourceName);
+                bool hasPainted = painted != null;
+                _backgroundRenderer.sprite = hasPainted ? painted : GetOrCreateArenaBackgroundSprite(theme);
+
+                if (hasPainted)
+                {
+                    Color tierTint = SubjectTierSystem.GetBadgeColor(tier);
+                    float tintMix = tier switch
+                    {
+                        BadgeTier.Beginner => 0.00f,
+                        BadgeTier.Intermediate => 0.06f,
+                        BadgeTier.Advanced => 0.10f,
+                        BadgeTier.Expert => 0.14f,
+                        _ => 0.00f
+                    };
+                    Color appliedTint = Color.Lerp(Color.white, tierTint, tintMix);
+                    appliedTint.a = 1f;
+                    _backgroundRenderer.color = appliedTint;
+                }
+                else
+                {
+                    _backgroundRenderer.color = Color.white;
+                }
+
                 var fitter = _backgroundRenderer.GetComponent<BackgroundFitter>();
                 if (fitter != null)
                 {
-                    fitter.ConfigureGround(0.42f, 1.05f);
+                    fitter.ConfigureGround(hasPainted ? PaintedPortraitGroundRatio : ProceduralGroundRatio, 1.05f);
                 }
             }
+        }
+
+        private Sprite LoadPaintedBackgroundSprite(string resourceName)
+        {
+            if (string.IsNullOrWhiteSpace(resourceName)) return null;
+            if (_loadedPaintedBackgrounds.TryGetValue(resourceName, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
+            var tex = Resources.Load<Texture2D>($"Backgrounds/{resourceName}");
+            if (tex != null)
+            {
+                var sprite = Sprite.Create(
+                    tex,
+                    new Rect(0f, 0f, tex.width, tex.height),
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+                sprite.name = resourceName;
+                _loadedPaintedBackgrounds[resourceName] = sprite;
+                return sprite;
+            }
+
+            var loadedSprite = Resources.Load<Sprite>($"Backgrounds/{resourceName}");
+            if (loadedSprite != null)
+            {
+                _loadedPaintedBackgrounds[resourceName] = loadedSprite;
+                return loadedSprite;
+            }
+
+            return null;
         }
 
         public static SubjectTierTheme BuildThemeSpec(string subject, BadgeTier tier)
         {
             string key = (subject ?? string.Empty).Trim().ToLowerInvariant();
-            var (biomeTitle, basePrimary, baseSecondary, baseSky, baseGround) = key switch
+            var (biomeTitle, bgResource, basePrimary, baseSecondary, baseSky, baseGround) = key switch
             {
                 "programming" => (
                     "Citadel of Code",
+                    "BG_Programming",
                     new Color(1.00f, 0.82f, 0.28f),
                     new Color(0.20f, 0.92f, 0.68f),
                     new Color(0.05f, 0.09f, 0.18f),
@@ -91,6 +150,7 @@ namespace KnowledgeWarrior.Visuals
                 ),
                 "web development" => (
                     "Hypertext Harbor",
+                    "BG_WebDevelopment",
                     new Color(1.00f, 0.56f, 0.24f),
                     new Color(0.28f, 0.86f, 1.00f),
                     new Color(0.11f, 0.07f, 0.20f),
@@ -98,6 +158,7 @@ namespace KnowledgeWarrior.Visuals
                 ),
                 "networking" => (
                     "Packet Peaks",
+                    "BG_Networking",
                     new Color(0.26f, 0.90f, 1.00f),
                     new Color(0.36f, 0.54f, 1.00f),
                     new Color(0.03f, 0.10f, 0.22f),
@@ -105,6 +166,7 @@ namespace KnowledgeWarrior.Visuals
                 ),
                 "databases" => (
                     "Relational Ruins",
+                    "BG_Databases",
                     new Color(0.68f, 0.44f, 1.00f),
                     new Color(0.95f, 0.42f, 0.82f),
                     new Color(0.09f, 0.05f, 0.20f),
@@ -112,6 +174,7 @@ namespace KnowledgeWarrior.Visuals
                 ),
                 "cybersecurity" => (
                     "Cipher Sanctum",
+                    "BG_Cybersecurity",
                     new Color(1.00f, 0.34f, 0.54f),
                     new Color(1.00f, 0.76f, 0.28f),
                     new Color(0.15f, 0.04f, 0.12f),
@@ -119,13 +182,31 @@ namespace KnowledgeWarrior.Visuals
                 ),
                 "computer systems" => (
                     "Silicon Foundry",
+                    "BG_ComputerSystems",
                     new Color(0.24f, 0.94f, 0.60f),
                     new Color(0.45f, 0.88f, 1.00f),
                     new Color(0.04f, 0.13f, 0.12f),
                     new Color(0.07f, 0.18f, 0.16f)
                 ),
+                "artificial intelligence" => (
+                    "Neural Nexus",
+                    "BG_ArtificialIntelligence",
+                    new Color(0.30f, 0.92f, 1.00f),
+                    new Color(0.72f, 0.46f, 1.00f),
+                    new Color(0.05f, 0.08f, 0.20f),
+                    new Color(0.08f, 0.13f, 0.28f)
+                ),
+                "ui/ux & software engineering" or "software engineering" or "ui/ux" => (
+                    "Design Studio",
+                    "BG_SoftwareEngineering",
+                    new Color(1.00f, 0.82f, 0.30f),
+                    new Color(0.32f, 0.90f, 0.94f),
+                    new Color(0.07f, 0.08f, 0.19f),
+                    new Color(0.10f, 0.12f, 0.25f)
+                ),
                 _ => (
                     "Binary Woods",
+                    "BG_Programming",
                     new Color(0.30f, 0.88f, 1.00f),
                     new Color(0.61f, 0.42f, 1.00f),
                     new Color(0.05f, 0.08f, 0.18f),
@@ -166,6 +247,7 @@ namespace KnowledgeWarrior.Visuals
                 subject = string.IsNullOrWhiteSpace(subject) ? "Programming" : subject,
                 biomeTitle = biomeTitle,
                 tierSubtitle = tierDesignName,
+                backgroundResourceName = bgResource,
                 tier = tier,
                 primaryAccent = basePrimary,
                 secondaryAccent = baseSecondary,

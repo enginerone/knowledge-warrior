@@ -555,6 +555,156 @@
       ],
       "correctIndex": 0,
       "explanation": "A Read-After-Write (RAW) data hazard happens when an instruction tries to read a register before a prior instruction has written its result back."
+    },
+    {
+      "id": "ai-001",
+      "subject": "Artificial Intelligence",
+      "topic": "AI Fundamentals",
+      "difficulty": 1,
+      "questionType": "multiple_choice",
+      "question": "What is the main goal of supervised learning in machine learning?",
+      "choices": [
+        "Learning to map inputs to known labeled outputs using example pairs",
+        "Grouping unlabeled data without any target answers",
+        "Deleting corrupted files from a hard drive automatically",
+        "Encrypting network packets with a private key"
+      ],
+      "correctIndex": 0,
+      "explanation": "Supervised learning trains a model on labeled input-output examples so it can predict outputs for new inputs."
+    },
+    {
+      "id": "ai-002",
+      "subject": "Artificial Intelligence",
+      "topic": "Machine Learning",
+      "difficulty": 1,
+      "questionType": "true_false",
+      "question": "TRUE OR FALSE: In machine learning, a training dataset is used to fit model parameters while a test dataset evaluates unseen generalization.",
+      "choices": [
+        "TRUE — Separating training and test sets measures how well the model generalizes",
+        "FALSE — A model should only ever be tested on the exact same training examples",
+        "FALSE — Test datasets are only used to format CSS stylesheets",
+        "FALSE — Training data must always be deleted before training starts"
+      ],
+      "correctIndex": 0,
+      "explanation": "Holding out a separate test set ensures the model is evaluated on data it did not memorize during training."
+    },
+    {
+      "id": "ai-003",
+      "subject": "Artificial Intelligence",
+      "topic": "Neural Networks",
+      "difficulty": 2,
+      "questionType": "fill_blank",
+      "question": "FILL IN THE BLANK: The ReLU activation function outputs `max(0, x)`, which introduces `___` into a neural network.",
+      "choices": ["non-linearity", "packet loss", "deadlock", "HTML markup"],
+      "correctIndex": 0,
+      "explanation": "Without non-linear activation functions like ReLU, stacked linear layers would collapse into a single linear transformation."
+    },
+    {
+      "id": "ai-004",
+      "subject": "Artificial Intelligence",
+      "topic": "Deep Learning Architectures",
+      "difficulty": 3,
+      "questionType": "multiple_choice",
+      "question": "Which mechanism allows Transformer models to weigh relationships between all tokens in a sequence simultaneously?",
+      "choices": [
+        "Scaled dot-product self-attention",
+        "Sequential bubble sort pooling",
+        "Fixed-window 1D max pooling without weights",
+        "Manual regular expression backtracking"
+      ],
+      "correctIndex": 0,
+      "explanation": "Self-attention computes query-key compatibility scores across every token pair in parallel, capturing long-range context."
+    },
+    {
+      "id": "ai-005",
+      "subject": "Artificial Intelligence",
+      "topic": "Transformers & Scaling",
+      "difficulty": 4,
+      "questionType": "multiple_choice",
+      "question": "What is the time and memory complexity of standard full self-attention with respect to sequence length N?",
+      "choices": ["O(N^2)", "O(log N)", "O(1)", "O(N)"],
+      "correctIndex": 0,
+      "explanation": "Full self-attention computes an N by N attention matrix across all token pairs, scaling quadratically with sequence length."
+    },
+    {
+      "id": "uiux-001",
+      "subject": "UI/UX & Software Engineering",
+      "topic": "UI vs UX",
+      "difficulty": 1,
+      "questionType": "multiple_choice",
+      "question": "What is the primary difference between UI (User Interface) and UX (User Experience)?",
+      "choices": [
+        "UI focuses on visual layout and interactive controls, while UX covers the overall usability and journey",
+        "UI is only used in backend databases, while UX is a programming compiler",
+        "UI handles network cables, while UX manages SQL primary keys",
+        "There is no difference; both terms mean writing server endpoints"
+      ],
+      "correctIndex": 0,
+      "explanation": "UI designs the screens, typography, and buttons a user interacts with, whereas UX shapes the end-to-end flow and ease of use."
+    },
+    {
+      "id": "uiux-002",
+      "subject": "UI/UX & Software Engineering",
+      "topic": "Prototyping",
+      "difficulty": 1,
+      "questionType": "true_false",
+      "question": "TRUE OR FALSE: Low-fidelity wireframes help teams validate screen structure and navigation early before spending time on final visual polish.",
+      "choices": [
+        "TRUE — Early wireframes make structural changes fast and inexpensive",
+        "FALSE — Wireframes must include final production animations and shaders first",
+        "FALSE — Wireframes can only be drawn after the database is deployed",
+        "FALSE — Wireframes replace all software testing completely"
+      ],
+      "correctIndex": 0,
+      "explanation": "Sketching simple wireframes early uncovers layout and flow problems before expensive engineering work begins."
+    },
+    {
+      "id": "uiux-003",
+      "subject": "UI/UX & Software Engineering",
+      "topic": "Accessibility (a11y)",
+      "difficulty": 2,
+      "questionType": "multiple_choice",
+      "question": "Why should interactive UI elements never rely on color alone to convey errors or required fields?",
+      "choices": [
+        "Users with color-vision deficiency or screen readers need text labels, icons, or ARIA attributes as well",
+        "Color values cannot be rendered on mobile screens",
+        "Using text labels makes HTTP requests twice as slow",
+        "Color contrast is ignored by WCAG guidelines"
+      ],
+      "correctIndex": 0,
+      "explanation": "WCAG accessibility requires pairing color cues with explicit text messages or semantic attributes so every user perceives state clearly."
+    },
+    {
+      "id": "uiux-004",
+      "subject": "UI/UX & Software Engineering",
+      "topic": "Design Systems",
+      "difficulty": 3,
+      "questionType": "multiple_choice",
+      "question": "What is the primary engineering benefit of semantic design tokens (such as color.surface.primary) over hardcoded hex values?",
+      "choices": [
+        "Consistent theming and rapid dark/light or brand updates from a single source of truth",
+        "Removing the need for HTML or C# components entirely",
+        "Bypassing HTTPS certificate validation on mobile clients",
+        "Automatic database table sharding"
+      ],
+      "correctIndex": 0,
+      "explanation": "Design tokens decouple visual intent from raw values, keeping UI components consistent across platforms and themes."
+    },
+    {
+      "id": "uiux-005",
+      "subject": "UI/UX & Software Engineering",
+      "topic": "UX Performance & Core Web Vitals",
+      "difficulty": 4,
+      "questionType": "multiple_choice",
+      "question": "Which Core Web Vital specifically measures visual layout stability when asynchronous images or banners load unexpectedly?",
+      "choices": [
+        "Cumulative Layout Shift (CLS)",
+        "Time to First Byte (TTFB)",
+        "Cyclomatic Complexity",
+        "Mean Time Between Failures (MTBF)"
+      ],
+      "correctIndex": 0,
+      "explanation": "CLS quantifies unexpected layout shifts during page lifecycle; reserving explicit media dimensions prevents jarring jumps."
     }
   ]
 }
