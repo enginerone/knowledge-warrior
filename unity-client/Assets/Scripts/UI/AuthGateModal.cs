@@ -95,6 +95,13 @@ namespace KnowledgeWarrior.UI
             }
             transform.SetAsLastSibling();
             ModalFx.Present(_modalGroup, true);
+            if (_loginUsernameInput != null &&
+                string.IsNullOrWhiteSpace(_loginUsernameInput.text) &&
+                AuthManager.Instance != null &&
+                !string.IsNullOrWhiteSpace(AuthManager.Instance.AuthenticatedUsername))
+            {
+                _loginUsernameInput.text = AuthManager.Instance.AuthenticatedUsername;
+            }
             SwitchPage(initialPage, clearFeedback: string.IsNullOrWhiteSpace(statusMessage));
             if (!string.IsNullOrWhiteSpace(statusMessage) && _feedbackText != null)
             {
@@ -467,6 +474,9 @@ namespace KnowledgeWarrior.UI
 
             ModalFx.Dress(_modalGroup, UIPalette.Cyan);
             SwitchPage(AuthPage.Register);
+            _modalGroup.alpha = 0f;
+            _modalGroup.interactable = false;
+            _modalGroup.blocksRaycasts = false;
         }
 
         private static RectTransform CreateContainer(string name, Transform parent)

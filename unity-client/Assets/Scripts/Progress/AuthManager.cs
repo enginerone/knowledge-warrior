@@ -266,6 +266,10 @@ namespace KnowledgeWarrior.Progress
             {
                 ProgressManager.Current.playerName = AuthenticatedUsername;
             }
+            if (IsAuthenticated && string.IsNullOrWhiteSpace(PlayerPrefs.GetString(LastActiveUtcTicksPrefKey, string.Empty)))
+            {
+                RecordUserActivity();
+            }
             _nextInactivityCheckTime = Time.unscaledTime + 10f;
         }
 
@@ -558,12 +562,22 @@ namespace KnowledgeWarrior.Progress
 
                 if (meReq.result != UnityWebRequest.Result.Success)
                 {
-                    string err = TryExtractErrorMessage(meReq.downloadHandler?.text) ?? "Saved session expired. Please sign in again.";
-                    LastInactivityExpiryMessage = err;
-                    ClearStoredCredentials();
-                    SubjectCheckpointManager.ClearInMemoryForLogout();
-                    ProgressManager.ResetSessionState();
-                    onComplete?.Invoke(true, false, err);
+                    if (meReq.responseCode == 401 || meReq.responseCode == 403 || meReq.responseCode == 404)
+                    {
+                        string err = TryExtractErrorMessage(meReq.downloadHandler?.text) ?? "Saved session expired. Please sign in again.";
+                        LastInactivityExpiryMessage = err;
+                        ClearStoredCredentials();
+                        SubjectCheckpointManager.ClearInMemoryForLogout();
+                        ProgressManager.ResetSessionState();
+                        onComplete?.Invoke(true, false, err);
+                    }
+                    else
+                    {
+                        string transientErr = TryExtractErrorMessage(meReq.downloadHandler?.text) ??
+                            $"Server temporarily unavailable ({meReq.responseCode}). Please retry connecting.";
+                        SyncManager.Instance?.ReportConnectionLost(transientErr);
+                        onComplete?.Invoke(false, false, transientErr);
+                    }
                     yield break;
                 }
             }

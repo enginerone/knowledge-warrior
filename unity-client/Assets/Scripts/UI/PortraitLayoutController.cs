@@ -161,6 +161,8 @@ namespace KnowledgeWarrior.UI
                 }
             }
 
+            EnsureCoinHud(safe);
+
             if (safe.Find("EnemyHUD") is RectTransform enemyHud)
             {
                 Place(enemyHud, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
@@ -338,6 +340,121 @@ namespace KnowledgeWarrior.UI
             rt.pivot = pivot;
             rt.anchoredPosition = pos;
             rt.sizeDelta = size;
+        }
+
+        public static RectTransform EnsureCoinHud(Transform safe)
+        {
+            TMP_Text unused = null;
+            return EnsureCoinHud(safe, ref unused);
+        }
+
+        /// <summary>
+        /// Ensures the dedicated CoinHUD container exists beneath PlayerHUD, assigns the coin icon sprite,
+        /// and binds <paramref name="coinText"/> if not yet assigned.
+        /// </summary>
+        public static RectTransform EnsureCoinHud(Transform safe, ref TMP_Text coinText)
+        {
+            if (safe == null) return null;
+
+            RectTransform coinHud = safe.Find("CoinHUD") as RectTransform;
+            if (coinHud == null)
+            {
+                var hudTemplate = safe.Find("PlayerHUD")?.GetComponent<Image>();
+                var xpFont = safe.Find("PlayerHUD/Fill/XPText")?.GetComponent<TMP_Text>()?.font;
+
+                var borderGo = new GameObject("CoinHUD", typeof(RectTransform));
+                borderGo.layer = safe.gameObject.layer;
+                borderGo.transform.SetParent(safe, false);
+                coinHud = (RectTransform)borderGo.transform;
+
+                var borderImg = borderGo.AddComponent<Image>();
+                if (hudTemplate != null && hudTemplate.sprite != null)
+                {
+                    borderImg.sprite = hudTemplate.sprite;
+                    borderImg.type = hudTemplate.type;
+                }
+                borderImg.pixelsPerUnitMultiplier = 1.8f;
+                borderImg.color = new Color(1f, 0.82f, 0.30f, 0.48f);
+                borderImg.raycastTarget = false;
+
+                var fillGo = new GameObject("Fill", typeof(RectTransform));
+                fillGo.layer = safe.gameObject.layer;
+                fillGo.transform.SetParent(coinHud, false);
+                var fillRt = (RectTransform)fillGo.transform;
+                fillRt.anchorMin = Vector2.zero;
+                fillRt.anchorMax = Vector2.one;
+                fillRt.pivot = new Vector2(0.5f, 0.5f);
+                fillRt.offsetMin = new Vector2(2f, 2f);
+                fillRt.offsetMax = new Vector2(-2f, -2f);
+
+                var fillImg = fillGo.AddComponent<Image>();
+                if (hudTemplate != null && hudTemplate.sprite != null)
+                {
+                    fillImg.sprite = hudTemplate.sprite;
+                    fillImg.type = hudTemplate.type;
+                }
+                fillImg.pixelsPerUnitMultiplier = 1.8f;
+                fillImg.color = new Color(0.04f, 0.06f, 0.16f, 0.90f);
+                fillImg.raycastTarget = false;
+
+                var iconGo = new GameObject("CoinIcon", typeof(RectTransform));
+                iconGo.layer = safe.gameObject.layer;
+                iconGo.transform.SetParent(fillRt, false);
+                var iconRt = (RectTransform)iconGo.transform;
+                Place(iconRt, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
+                    new Vector2(12f, 0f), new Vector2(28f, 28f));
+                var iconImg = iconGo.AddComponent<Image>();
+                iconImg.sprite = UISprites.Coin;
+                iconImg.color = Color.white;
+                iconImg.preserveAspect = true;
+                iconImg.raycastTarget = false;
+
+                var textGo = new GameObject("CoinText", typeof(RectTransform));
+                textGo.layer = safe.gameObject.layer;
+                textGo.transform.SetParent(fillRt, false);
+                var textRt = (RectTransform)textGo.transform;
+                textRt.anchorMin = Vector2.zero;
+                textRt.anchorMax = Vector2.one;
+                textRt.pivot = new Vector2(0.5f, 0.5f);
+                textRt.offsetMin = new Vector2(48f, 4f);
+                textRt.offsetMax = new Vector2(-12f, -4f);
+
+                var tmp = textGo.AddComponent<TextMeshProUGUI>();
+                if (xpFont != null) tmp.font = xpFont;
+                tmp.text = "0 COINS";
+                tmp.color = UIPalette.Gold;
+                tmp.fontStyle = FontStyles.Bold;
+                tmp.alignment = TextAlignmentOptions.MidlineLeft;
+                tmp.enableAutoSizing = true;
+                tmp.fontSizeMin = 14f;
+                tmp.fontSizeMax = 20f;
+                tmp.raycastTarget = false;
+            }
+
+            Place(coinHud, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
+                new Vector2(20f, -232f), new Vector2(210f, 46f));
+
+            RectTransform fill = (coinHud.Find("Fill") as RectTransform) ?? coinHud;
+            if (fill.Find("CoinIcon") is RectTransform iconTransform && iconTransform.GetComponent<Image>() is Image icon)
+            {
+                Place(iconTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
+                    new Vector2(12f, 0f), new Vector2(28f, 28f));
+                icon.sprite = UISprites.Coin;
+                icon.color = Color.white;
+                icon.preserveAspect = true;
+            }
+
+            if (fill.Find("CoinText") is RectTransform txtTransform && txtTransform.GetComponent<TMP_Text>() is TMP_Text txt)
+            {
+                txt.enableAutoSizing = true;
+                txt.fontSizeMin = 14f;
+                txt.fontSizeMax = 20f;
+                txt.color = UIPalette.Gold;
+                txt.alignment = TextAlignmentOptions.MidlineLeft;
+                if (coinText == null) coinText = txt;
+            }
+
+            return fill;
         }
     }
 }

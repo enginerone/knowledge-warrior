@@ -10,6 +10,7 @@ namespace KnowledgeWarrior.UI
         public RectTransform canvasRoot;
         public RectTransform playerHpFill;
         public RectTransform playerXpFill;
+        public RectTransform coinHudFill;
         public RectTransform enemyHpFill;
         public CanvasGroup questionPanel;
         public CanvasGroup feedbackGroup;
@@ -28,6 +29,7 @@ namespace KnowledgeWarrior.UI
         public ShineSweep bannerShine;
         public RectTransform playerHud;
         public RectTransform enemyHud;
+        public RectTransform coinHud;
         public FxPanel resultPanel;
     }
 
@@ -46,6 +48,13 @@ namespace KnowledgeWarrior.UI
 
             DressFighterHud(refs.playerHpFill, UIPalette.Cyan, out handles.playerHud);
             DressFighterHud(refs.enemyHpFill, UIPalette.Red, out handles.enemyHud);
+
+            var coinFill = refs.coinHudFill ?? root.Find("SafeArea/CoinHUD/Fill") as RectTransform;
+            if (coinFill != null)
+            {
+                UIDecorator.DecoratePanel(coinFill, UIPalette.Gold, 0f, 0.14f, corners: false, shine: true);
+                handles.coinHud = coinFill.parent as RectTransform;
+            }
 
             HudBarFX.Install(refs.playerHpFill, true);
             HudBarFX.Install(refs.enemyHpFill, true);

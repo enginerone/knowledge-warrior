@@ -25,38 +25,53 @@ namespace KnowledgeWarrior.Progress
     }
 
     /// <summary>
-    /// Stores independent per-subject battle checkpoints so players can quit a subject battle,
-    /// enter another subject lobby, and resume right where they exited later.
+    /// Stores independent per-subject battle checkpoints separately for Online Mode and
+    /// Offline Practice Mode so players can quit, switch subjects, or reopen the game
+    /// and resume right where they exited in either mode.
     /// </summary>
     public static class SubjectCheckpointManager
     {
-        private static readonly Dictionary<string, SubjectBattleCheckpoint> Checkpoints =
+        private static readonly Dictionary<string, SubjectBattleCheckpoint> OnlineCheckpoints =
             new(StringComparer.OrdinalIgnoreCase);
 
-        private static string PrefKeyPrefix =>
-            (SyncManager.IsLocalDevelopmentEnvironment ? "kw_local_cp_" : "kw_cloud_cp_") +
-            (AuthManager.Instance != null && !string.IsNullOrWhiteSpace(AuthManager.Instance.AuthenticatedUserId)
+        private static readonly Dictionary<string, SubjectBattleCheckpoint> OfflineCheckpoints =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        private static bool ResolveIsOffline(bool? isOfflineOverride) =>
+            isOfflineOverride ?? OfflinePracticeManager.IsOfflinePracticeMode;
+
+        private static Dictionary<string, SubjectBattleCheckpoint> GetMap(bool isOffline) =>
+            isOffline ? OfflineCheckpoints : OnlineCheckpoints;
+
+        private static string GetPrefKeyPrefix(bool isOffline)
+        {
+            string envPrefix = SyncManager.IsLocalDevelopmentEnvironment ? "kw_local_" : "kw_cloud_";
+            string modeSegment = isOffline ? "offline_cp_" : "cp_";
+            string userSegment = AuthManager.Instance != null && !string.IsNullOrWhiteSpace(AuthManager.Instance.AuthenticatedUserId)
                 ? AuthManager.Instance.AuthenticatedUserId
-                : "guest") + "_";
+                : "guest";
+            return $"{envPrefix}{modeSegment}{userSegment}_";
+        }
 
         private static string NormalizeKey(string subject) =>
             string.IsNullOrWhiteSpace(subject) ? "Programming" : subject.Trim();
 
-        private static string BuildPrefKey(string subject) =>
-            PrefKeyPrefix + NormalizeKey(subject).ToLowerInvariant().Replace(" ", "_");
+        private static string BuildPrefKey(string subject, bool isOffline) =>
+            GetPrefKeyPrefix(isOffline) + NormalizeKey(subject).ToLowerInvariant().Replace(" ", "_");
 
-        public static void SaveCheckpoint(SubjectBattleCheckpoint checkpoint)
+        public static void SaveCheckpoint(SubjectBattleCheckpoint checkpoint, bool? isOfflineOverride = null)
         {
             if (checkpoint == null || string.IsNullOrWhiteSpace(checkpoint.subject)) return;
+            bool isOffline = ResolveIsOffline(isOfflineOverride);
             string key = NormalizeKey(checkpoint.subject);
             checkpoint.subject = key;
             checkpoint.stageIndex = Mathf.Clamp(checkpoint.stageIndex, 0, 3);
             checkpoint.hasCheckpoint = true;
-            Checkpoints[key] = checkpoint;
+            GetMap(isOffline)[key] = checkpoint;
 
             try
             {
-                PlayerPrefs.SetString(BuildPrefKey(key), JsonUtility.ToJson(checkpoint));
+                PlayerPrefs.SetString(BuildPrefKey(key, isOffline), JsonUtility.ToJson(checkpoint));
                 PlayerPrefs.Save();
             }
             catch (Exception ex)
@@ -75,11 +90,11 @@ namespace KnowledgeWarrior.Progress
             string key = NormalizeKey(subject);
             if (!hasActiveCheckpoint)
             {
-                ClearLocalOnly(key);
+                ClearLocalOnly(key, isOffline: false);
                 return;
             }
 
-            if (TryGetCheckpoint(key, out var local) &&
+            if (TryGetCheckpoint(key, out var local, isOfflineOverride: false) &&
                 local.hasCheckpoint &&
                 local.stageIndex == stageIndex &&
                 local.playerHp > 0 &&
@@ -96,10 +111,10 @@ namespace KnowledgeWarrior.Progress
                 enemyHp = Mathf.Max(0, enemyHp),
                 hasCheckpoint = true
             };
-            Checkpoints[key] = hydrated;
+            OnlineCheckpoints[key] = hydrated;
             try
             {
-                PlayerPrefs.SetString(BuildPrefKey(key), JsonUtility.ToJson(hydrated));
+                PlayerPrefs.SetString(BuildPrefKey(key, isOffline: false), JsonUtility.ToJson(hydrated));
                 PlayerPrefs.Save();
             }
             catch
@@ -108,15 +123,20 @@ namespace KnowledgeWarrior.Progress
             }
         }
 
-        public static bool TryGetCheckpoint(string subject, out SubjectBattleCheckpoint checkpoint)
+        public static bool TryGetCheckpoint(
+            string subject,
+            out SubjectBattleCheckpoint checkpoint,
+            bool? isOfflineOverride = null)
         {
+            bool isOffline = ResolveIsOffline(isOfflineOverride);
+            var map = GetMap(isOffline);
             string key = NormalizeKey(subject);
-            if (Checkpoints.TryGetValue(key, out checkpoint) && checkpoint != null && checkpoint.hasCheckpoint)
+            if (map.TryGetValue(key, out checkpoint) && checkpoint != null && checkpoint.hasCheckpoint)
             {
                 return true;
             }
 
-            string raw = PlayerPrefs.GetString(BuildPrefKey(key), string.Empty);
+            string raw = PlayerPrefs.GetString(BuildPrefKey(key, isOffline), string.Empty);
             if (!string.IsNullOrWhiteSpace(raw))
             {
                 try
@@ -124,7 +144,7 @@ namespace KnowledgeWarrior.Progress
                     var loaded = JsonUtility.FromJson<SubjectBattleCheckpoint>(raw);
                     if (loaded != null && loaded.hasCheckpoint)
                     {
-                        Checkpoints[key] = loaded;
+                        map[key] = loaded;
                         checkpoint = loaded;
                         return true;
                     }
@@ -139,23 +159,24 @@ namespace KnowledgeWarrior.Progress
             return false;
         }
 
-        public static void ClearCheckpoint(string subject)
+        public static void ClearCheckpoint(string subject, bool? isOfflineOverride = null)
         {
+            bool isOffline = ResolveIsOffline(isOfflineOverride);
             string key = NormalizeKey(subject);
-            ClearLocalOnly(key);
+            ClearLocalOnly(key, isOffline);
         }
 
         public static void ClearInMemoryForLogout()
         {
-            Checkpoints.Clear();
+            OnlineCheckpoints.Clear();
         }
 
-        private static void ClearLocalOnly(string normalizedSubject)
+        private static void ClearLocalOnly(string normalizedSubject, bool isOffline)
         {
-            Checkpoints.Remove(normalizedSubject);
+            GetMap(isOffline).Remove(normalizedSubject);
             try
             {
-                string prefKey = BuildPrefKey(normalizedSubject);
+                string prefKey = BuildPrefKey(normalizedSubject, isOffline);
                 if (PlayerPrefs.HasKey(prefKey))
                 {
                     PlayerPrefs.DeleteKey(prefKey);

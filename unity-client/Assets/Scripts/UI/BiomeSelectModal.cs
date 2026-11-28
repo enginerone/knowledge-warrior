@@ -185,7 +185,7 @@ namespace KnowledgeWarrior.UI
                 Color badgeColor = SubjectTierSystem.GetBadgeColor(tier);
                 bool isSelected = string.Equals(opt.subjectFilter ?? string.Empty, _activeSubject ?? string.Empty, StringComparison.OrdinalIgnoreCase);
                 SubjectBattleCheckpoint cp = null;
-                bool hasCheckpoint = !isOffline && SubjectCheckpointManager.TryGetCheckpoint(subjName, out cp) && cp != null;
+                bool hasCheckpoint = SubjectCheckpointManager.TryGetCheckpoint(subjName, out cp) && cp != null;
 
                 c.root.SetActive(true);
                 c.border.color = isSelected ? opt.accentColor : new Color(opt.accentColor.r, opt.accentColor.g, opt.accentColor.b, 0.35f);
@@ -199,7 +199,9 @@ namespace KnowledgeWarrior.UI
                 c.levelBadgeText.color = badgeColor;
                 int unseenCount = _questionManager.CountUnseenForSubject(subjName);
                 c.topicsText.text = hasCheckpoint
-                    ? $"SAVED CHECKPOINT: Stage {cp.stageIndex + 1}/4\n{opt.topicsSummary}"
+                    ? (isOffline
+                        ? $"SAVED OFFLINE CHECKPOINT: Stage {cp.stageIndex + 1}/4\n{opt.topicsSummary}"
+                        : $"SAVED CHECKPOINT: Stage {cp.stageIndex + 1}/4\n{opt.topicsSummary}")
                     : opt.topicsSummary;
                 c.countText.text = isOffline
                     ? $"{opt.questionCount} Practice Questions Available"
